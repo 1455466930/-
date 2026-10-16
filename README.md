@@ -6,6 +6,8 @@ Android 逆向分析工具：**Xposed 加密算法日志** + **双通道抓包**
 
 > 仅用于自有设备上的应用调试与协议分析。
 
+**交流反馈**：[加入社区](https://docs.qq.com/doc/DUHZkb1hLWmhQQXN5)
+
 ---
 
 ## 功能
@@ -254,6 +256,16 @@ app/src/main/java/com/junge/aidepro/
 **抓包控制** `vpn_capture` `mitm_proxy`
 
 **应用与其他** `list_apps` `list_databases` `frida_get_log` `frida_clear_log` `host_mcp_instructions`
+
+---
+
+## 交流与反馈
+
+遇到问题、想交流逆向技巧，或者有功能建议，欢迎加入社区：
+
+**https://docs.qq.com/doc/DUHZkb1hLWmhQQXN5**
+
+提 Issue 也可以，但社区里回复更快。
 
 ---
 
