@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace 'com.junge.aidepro'
+    namespace 'com.sfzsgybb.ai'
     compileSdk 36
 
     defaultConfig {
-        applicationId "com.junge.aidepro"
+        applicationId "com.sfzsgybb.ai"
         minSdk 26
         targetSdk 36
         versionCode 1

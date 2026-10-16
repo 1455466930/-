@@ -25,7 +25,7 @@
 
 以下部分与原版保持一致，便于迁移与对接：
 
-- **Xposed 入口**：`assets/xposed_init` → `com.junge.aidepro.hook.XpEntry`
+- **Xposed 入口**：`assets/xposed_init` → `com.sfzsgybb.ai.hook.XpEntry`
 - **MCP 协议**：`initialize` / `tools/list` / `tools/call`，JSON-RPC 2.0
 - **MCP 工具名**：与原版 native 层字符串表中的工具名逐一对应
 - **游标格式**：`afterId` 为 `v2:<time>:<h|t>:<id>`，`id` 为 `<rowid>` 或 `<rowid>-h2-<n>`

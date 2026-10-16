@@ -87,7 +87,7 @@
         -->
         <provider
             android:name=".provider.AlgorithmServiceProvider"
-            android:authorities="com.junge.aidepro.ipc"
+            android:authorities="com.sfzsgybb.ai.ipc"
             android:exported="true"
             android:enabled="true"
             android:grantUriPermissions="false" />
@@ -119,7 +119,7 @@
 
         <!-- 抓包用 VPN 服务：路由层接管流量，覆盖不读系统代理的应用 -->
         <service
-            android:name="com.junge.aidepro.vpn.CaptureVpnService"
+            android:name="com.sfzsgybb.ai.vpn.CaptureVpnService"
             android:exported="false"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="dataSync">

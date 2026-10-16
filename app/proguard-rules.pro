@@ -1,7 +1,7 @@
 # Xposed
 -keep class de.robv.android.xposed.** { *; }
--keep class com.junge.aidepro.hook.** { *; }
--keepnames class com.junge.aidepro.hook.XpEntry
+-keep class com.sfzsgybb.ai.hook.** { *; }
+-keepnames class com.sfzsgybb.ai.hook.XpEntry
 
 # Room
 -keep class * extends androidx.room.RoomDatabase
@@ -12,8 +12,8 @@
 -dontnote kotlinx.serialization.**
 -keepclassmembers class kotlinx.serialization.json.** { *** Companion; }
 -keepclasseswithmembers class kotlinx.serialization.json.** { kotlinx.serialization.KSerializer serializer(...); }
--keepclassmembers class com.junge.aidepro.** { *** Companion; }
--keepclasseswithmembers class com.junge.aidepro.** { kotlinx.serialization.KSerializer serializer(...); }
+-keepclassmembers class com.sfzsgybb.ai.** { *** Companion; }
+-keepclasseswithmembers class com.sfzsgybb.ai.** { kotlinx.serialization.KSerializer serializer(...); }
 
 # AIDL
--keep class com.junge.aidepro.ipc.** { *; }
+-keep class com.sfzsgybb.ai.ipc.** { *; }
