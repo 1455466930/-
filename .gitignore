@@ -33,3 +33,12 @@ Thumbs.db
 *.log
 *.swp
 *~
+
+# ---------- 签名密钥（绝不提交）----------
+key.properties
+keystore/
+*.jks
+*.keystore
+
+# ---------- 发布产物 ----------
+release-apk/

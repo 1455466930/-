@@ -11,6 +11,32 @@ android {
     namespace 'com.sfzsgybb.ai'
     compileSdk 36
 
+    // 发布签名配置。
+    //
+    // 【密钥从哪来】
+    // 根目录 key.properties（已在 .gitignore 里，绝不提交）。
+    // 没有该文件时自动跳过签名 —— 便于别人 clone 后直接构建 debug，
+    // 不会因为缺密钥而构建失败。
+    //
+    // 【密钥的重要性】
+    // 以后所有更新必须用同一个密钥签名，否则用户得卸载重装。
+    def keyPropsFile = rootProject.file('key.properties')
+    def keyProps = new Properties()
+    if (keyPropsFile.exists()) {
+        keyPropsFile.withInputStream { keyProps.load(it) }
+    }
+
+    signingConfigs {
+        release {
+            if (keyPropsFile.exists()) {
+                storeFile rootProject.file(keyProps['storeFile'])
+                storePassword keyProps['storePassword']
+                keyAlias keyProps['keyAlias']
+                keyPassword keyProps['keyPassword']
+            }
+        }
+    }
+
     defaultConfig {
         applicationId "com.sfzsgybb.ai"
         minSdk 26
@@ -25,6 +51,10 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // 有 key.properties 时才套用签名；否则产出未签名包（可用 apksigner 手动签）
+            if (keyPropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
         debug {
             minifyEnabled false
