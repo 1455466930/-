@@ -57,6 +57,7 @@ import com.sfzsgybb.ai.ui.theme.GroupColors
 import com.sfzsgybb.ai.ui.theme.ScreenPadding
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Spacer
@@ -465,6 +466,11 @@ private fun LogRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Chip(LogGroup.label(log.group), groupColor)
+            // 文件读写方向：绿=读，橙=写，红=删。
+            // 列表里全是「File…」时分不清方向，加个彩色标签一眼看明白。
+            fileOpTag(log.logName)?.let { (tag, color) ->
+                Chip(tag, color)
+            }
             Text(
                 text = log.logName.ifBlank { log.className.substringAfterLast('.') },
                 style = MaterialTheme.typography.bodyMedium,
@@ -501,6 +507,15 @@ private fun LogRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        // 操作细节：比如「⚠ 覆盖写入（会清空原内容）」
+        if (log.paramDesc.isNotBlank()) {
+            Text(
+                text = log.paramDesc,
+                fontSize = 11.sp,
+                maxLines = 1,
+                color = if (log.paramDesc.startsWith("⚠")) OpWrite else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (log.resultBrief.isNotBlank()) {
             Text(
                 text = "→ " + log.resultBrief,
@@ -510,6 +525,29 @@ private fun LogRow(
                 color = MaterialTheme.colorScheme.primary,
             )
         }
+    }
+}
+
+// ---------- 文件操作方向配色 ----------
+private val OpRead = Color(0xFF2E7D32)
+private val OpWrite = Color(0xFFEF6C00)
+private val OpDelete = Color(0xFFC62828)
+
+/**
+ * 把「文件读取 / 文件写入 / 文件删除」映射成带颜色的短标签。
+ *
+ * 列表里一堆文件操作长得都一样，光看路径分不出方向，
+ * 加个彩色标签比读文字快得多。
+ *
+ * @return (标签文本, 颜色)；不是文件操作返回 null
+ */
+private fun fileOpTag(logName: String): Pair<String, Color>? {
+    if (!logName.startsWith("文件")) return null
+    return when {
+        "读取" in logName -> "读" to OpRead
+        "写入" in logName -> "写" to OpWrite
+        "删除" in logName -> "删" to OpDelete
+        else -> null
     }
 }
 
