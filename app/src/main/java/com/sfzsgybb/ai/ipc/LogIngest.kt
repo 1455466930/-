@@ -67,12 +67,13 @@ internal object LogIngest {
         logRepository: LogRepository,
     ) {
         runCatching {
-            // 用「没有就创建」的版本：Hook 抓到的数据在 APP 刚启动、
-            // 用户还没点「开始抓包」时也不该丢。
-            // （早期用 currentSessionId() 只读内存，没有会话就静默丢弃，
-            //   表现为「Hook 明明装上了却一条数据都没有」）
-            val sessionId = captureRepository.ensureOrCreateSession("Hook 抓包")
-                ?: return@runCatching
+            // 【D4 修复】会话按应用包名隔离：用目标应用的真实包名，
+            // 而不是写死 "Hook 抓包"。否则所有被 Hook 应用的数据
+            // 都挤进同一个会话，按 sessionId 查询会漏。
+            val pkg = data.str("pkg") ?: ""
+            val sessionId = captureRepository.ensureOrCreateSession(
+                pkg.ifBlank { "Hook 抓包" }
+            ) ?: return@runCatching
             val url = data.str("url") ?: return@runCatching
             if (!captureRepository.shouldRecord(url, null)) return@runCatching
 
@@ -82,10 +83,8 @@ internal object LogIngest {
             val requestBody = data.getByteArray("requestBody") ?: ByteArray(0)
             val responseBody = data.getByteArray("responseBody") ?: ByteArray(0)
             val ts = data.str("ts")?.toLongOrNull() ?: System.currentTimeMillis()
-            // Hook 上报的包名：目标应用的包名
-            val pkg = data.str("pkg") ?: ""
 
-            captureRepository.insertHttp(
+            val recordId = captureRepository.insertHttp(
                 HttpRecord(
                     sessionId = sessionId,
                     packageName = pkg,
@@ -104,6 +103,16 @@ internal object LogIngest {
                 )
             )
 
+            // 【D6】挂调用栈：network_stacks 靠 stack_record 关联
+            val stackText = data.str("callStack") ?: ""
+            if (stackText.isNotBlank()) {
+                val frames = stackText.lines()
+                    .map { it.trim() }
+                    .filter { it.startsWith("at ") }
+                    .ifEmpty { stackText.lines().map { it.trim() } }
+                captureRepository.attachStack(recordId, frames)
+            }
+
             // 同时写一条「网络」分组的日志，让日志页的网络栏也能看到
             // （http_record 是抓包页用的，log_record 是日志页用的，两张表）。
             val summary = buildString {
@@ -118,7 +127,7 @@ internal object LogIngest {
                     objName = "",
                     group = com.sfzsgybb.ai.data.model.LogGroup.NETWORK,
                     type = -1,
-                    callStack = "",
+                    callStack = data.str("callStack") ?: "",
                     payload = summary.toByteArray(),
                     payloadBrief = summary,
                     payloadCrc = LogRepository.crc(summary.toByteArray()),

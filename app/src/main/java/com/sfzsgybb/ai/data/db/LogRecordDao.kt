@@ -105,18 +105,25 @@ interface LogRecordDao {
     @Query("DELETE FROM log_record WHERE id NOT IN (SELECT id FROM log_record ORDER BY time DESC LIMIT :keep)")
     suspend fun trimTo(keep: Int)
 
-    /** 分组统计，用于 MCP get_log_graph。 */
-    @Query("SELECT `group` AS g, COUNT(*) AS c FROM log_record GROUP BY `group` ORDER BY c DESC")
-    suspend fun groupCounts(): List<GroupCount>
+    /** 分组统计，用于 MCP get_log_graph。支持按包名过滤。 */
+    @Query(
+        """
+        SELECT `group` AS g, COUNT(*) AS c FROM log_record
+        WHERE (:packageName IS NULL OR packageName = :packageName)
+        GROUP BY `group` ORDER BY c DESC
+        """
+    )
+    suspend fun groupCounts(packageName: String?): List<GroupCount>
 
-    /** 按 logName 聚合，用于图表。 */
+    /** 按 logName 聚合，用于图表。支持按包名过滤。 */
     @Query(
         """
         SELECT logName AS name, COUNT(*) AS c FROM log_record
+        WHERE (:packageName IS NULL OR packageName = :packageName)
         GROUP BY logName ORDER BY c DESC LIMIT :limit
         """
     )
-    suspend fun topLogNames(limit: Int): List<NameCount>
+    suspend fun topLogNames(packageName: String?, limit: Int): List<NameCount>
 
     /**
      * 按应用包名分组统计。

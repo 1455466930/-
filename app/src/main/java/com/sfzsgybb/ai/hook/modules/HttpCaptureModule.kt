@@ -1,6 +1,7 @@
 package com.sfzsgybb.ai.hook.modules
 
 import com.sfzsgybb.ai.hook.config.HookSwitch
+import com.sfzsgybb.ai.hook.engine.CallStackCapture
 import com.sfzsgybb.ai.hook.engine.HookContext
 import com.sfzsgybb.ai.hook.engine.HookModule
 import com.sfzsgybb.ai.hook.engine.LogReporter
@@ -213,7 +214,10 @@ class HttpCaptureModule : HookModule {
             val reqBody = readRequestBody(request)
             val (respBody, newResponse) = readAndReplaceResponseBody(response)
 
-            ctx.reporter.http(method, url, code, reqHeaders, respHeaders, reqBody, respBody, durationMs)
+            // 【D6】采集发起方调用栈：network_stacks 能定位到业务代码
+            val stack = CallStackCapture.captureCaller("okhttp3")
+
+            ctx.reporter.http(method, url, code, reqHeaders, respHeaders, reqBody, respBody, durationMs, stack)
 
             // 返回替换后的 response（可能为 null，表示替换失败，保持原样）
             newResponse ?: response
@@ -406,6 +410,7 @@ class HttpCaptureModule : HookModule {
                                 requestHeaders = emptyList(), responseHeaders = emptyList(),
                                 requestBody = ByteArray(0), responseBody = captured,
                                 durationMs = if (start > 0) System.currentTimeMillis() - start else 0L,
+                                callStack = CallStackCapture.captureCaller("java.net"),
                             )
                         }
                     }
@@ -426,7 +431,10 @@ class HttpCaptureModule : HookModule {
                     val url = runCatching {
                         req.javaClass.getMethod("getUrl").invoke(req).toString()
                     }.getOrNull() ?: return
-                    ctx.reporter.http("GET", url, 0, emptyList(), emptyList(), ByteArray(0), ByteArray(0), 0L)
+                    ctx.reporter.http(
+                        "GET", url, 0, emptyList(), emptyList(), ByteArray(0), ByteArray(0), 0L,
+                        CallStackCapture.captureCaller("android.webkit"),
+                    )
                 }
             })
         }

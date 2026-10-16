@@ -123,6 +123,7 @@ class IpcLogReporter(
         requestBody: ByteArray,
         responseBody: ByteArray,
         durationMs: Long,
+        callStack: String,
     ) {
         val b = Bundle().apply {
             putString("pkg", packageName)
@@ -135,6 +136,8 @@ class IpcLogReporter(
             putString("respHeaders", encodeHeaders(responseHeaders))
             putByteArray("requestBody", cap(requestBody))
             putByteArray("responseBody", cap(responseBody))
+            // 【D6】调用堆栈，供 network_stacks 定位发起方代码
+            putString("callStack", callStack)
         }
         enqueue(b)
     }

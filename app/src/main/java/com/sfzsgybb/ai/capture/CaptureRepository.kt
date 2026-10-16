@@ -72,21 +72,35 @@ class CaptureRepository(private val dao: CaptureDao) {
     suspend fun ensureSessionId(): String? = resolvedSessionId()
 
     /**
-     * 取会话 ID；**没有活跃会话时自动创建一个**。
+     * 取会话 ID；**没有匹配的活跃会话时自动创建一个**。
      *
-     * 【为什么需要自动创建】
-     * VPN / MITM 代理独立于「抓包会话」运行：用户可能先启动 VPN，
-     * 或者 APP 被系统回收后重启导致内存里的会话丢了。
-     * 此时没有 RUNNING 会话，数据会被静默丢弃 ——
-     * 表现为「应用请求正常，但抓包页一条都没有」。
+     * 【D4 修复】按 packageName 匹配：同一个应用的流量应该进同一个会话。
+     * 之前的实现只要有 RUNNING 会话就复用，导致「Hook 抓包」这个会话
+     * 把追剧鸭、QQ、应用商店的流量全吞进去，按 sessionId 查就漏数据。
      *
-     * 所以写入路径改用这个方法：没有会话就现建一个，保证流量不丢。
+     * 匹配顺序：
+     *  1. 内存中的活跃会话且包名一致 → 复用
+     *  2. 数据库里的 RUNNING 会话且包名一致 → 恢复复用
+     *  3. 都没有 → 新建一个（包名取传入值）
      */
     suspend fun ensureOrCreateSession(packageName: String = "自动抓包"): String? {
-        resolvedSessionId()?.let { return it }
+        // 1) 内存中的活跃会话，包名一致才复用
+        activeSessionId?.let { id ->
+            if (activePackage == packageName) return id
+        }
+        // 2) 数据库里的 RUNNING 会话，包名一致才复用
+        val running = runCatching { dao.runningSession() }.getOrNull()
+        if (running != null && running.packageName == packageName) {
+            activeSessionId = running.sessionId
+            activePackage = running.packageName
+            activeFilterLocal = running.filterLocalRequests
+            activeStartedAt = running.startedAt
+            return running.sessionId
+        }
+        // 3) 都没有匹配的 → 新建
         return try {
             val s = start(packageName)
-            android.util.Log.i("CaptureRepository", "自动创建会话: ${s.sessionId}")
+            android.util.Log.i("CaptureRepository", "自动创建会话: ${s.sessionId} pkg=$packageName")
             activeSessionId = s.sessionId
             s.sessionId
         } catch (t: Throwable) {
@@ -278,6 +292,22 @@ class CaptureRepository(private val dao: CaptureDao) {
 
     suspend fun httpById(id: Long): HttpRecord? = dao.httpById(id)?.toModel()
     suspend fun packetById(id: Long): PacketData? = dao.packetById(id)?.toModel()
+
+    /**
+     * 给一条 HTTP 记录挂调用栈（Hook 抓包时采集，供 network_stacks 用）。
+     */
+    suspend fun attachStack(ownerId: Long, frames: List<String>) {
+        if (ownerId <= 0 || frames.isEmpty()) return
+        runCatching {
+            dao.insertStack(
+                com.sfzsgybb.ai.data.db.StackRecordEntity(
+                    ownerId = ownerId,
+                    frames = frames,
+                    time = System.currentTimeMillis(),
+                )
+            )
+        }
+    }
 
     /** 读元数据（不含 BLOB）——【D1】信息类工具用，避免 CursorWindow 打爆。 */
     suspend fun httpMetaById(id: Long): HttpRecord? = dao.httpMetaById(id)?.toModel()

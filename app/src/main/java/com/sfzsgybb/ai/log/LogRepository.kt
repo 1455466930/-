@@ -59,14 +59,14 @@ class LogRepository(private val dao: LogRecordDao) {
     suspend fun trim(keep: Int) = dao.trimTo(keep)
 
     suspend fun groupCounts(packageName: String?): List<Pair<Int, Int>> =
-        dao.groupCounts().map { it.g to it.c }
+        dao.groupCounts(packageName).map { it.g to it.c }
 
     /** 按应用包名分组统计（日志页应用卡片用）。 */
     suspend fun packageStats(): List<com.sfzsgybb.ai.data.db.PackageStat> =
         dao.packageCounts()
 
     suspend fun topLogNames(packageName: String?, limit: Int): List<Pair<String, Int>> =
-        dao.topLogNames(limit).map { it.name to it.c }
+        dao.topLogNames(packageName, limit).map { it.name to it.c }
 
     // ---------- 渲染 ----------
 

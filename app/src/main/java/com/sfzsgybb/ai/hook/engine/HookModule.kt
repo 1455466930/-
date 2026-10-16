@@ -88,5 +88,7 @@ interface LogReporter {
         requestBody: ByteArray,
         responseBody: ByteArray,
         durationMs: Long,
+        /** 发起方调用栈（Hook 进程里采集，供 network_stacks 使用） */
+        callStack: String = "",
     )
 }
