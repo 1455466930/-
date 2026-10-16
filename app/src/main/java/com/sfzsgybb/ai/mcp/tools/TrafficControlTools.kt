@@ -520,4 +520,38 @@ interface ScriptStore {
     fun get(index: Int): Item?
     /** @return 脚本索引 */
     fun save(index: Int?, name: String, urlPattern: String, code: String): Int
+
+    /**
+     * 删除脚本。
+     * @return 是否删除成功
+     */
+    fun remove(index: Int): Boolean
+}
+
+/** 删除拦截脚本工具。 */
+class RemoveScriptTool(private val scripts: ScriptStore) : McpToolHandler {
+    override val name = "remove_script"
+    override val description = "删除拦截脚本（按 list_scripts 返回的索引）。"
+
+    override val inputSchema = Schema.obj(
+        properties = mapOf(
+            "index" to Schema.integer("脚本索引，来自 list_scripts"),
+            "confirm" to Schema.boolean("必须显式传 true", default = false),
+        ),
+        required = listOf("index", "confirm"),
+    )
+
+    override suspend fun execute(args: JsonObject): String {
+        val a = Args(args)
+        if (!a.bool("confirm", false)) {
+            return buildJsonObject { put("error", "confirmation_required") }.toString()
+        }
+        val idx = a.int("index", required = true)!!
+        val ok = scripts.remove(idx)
+        return buildJsonObject {
+            put("removed", ok)
+            put("index", idx)
+            if (!ok) put("hint", "索引 $idx 不存在")
+        }.toString()
+    }
 }

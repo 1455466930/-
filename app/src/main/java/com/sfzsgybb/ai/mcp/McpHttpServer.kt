@@ -154,11 +154,18 @@ class McpHttpServer(
             socket.soTimeout = config.idleTimeoutMs
             socket.tcpNoDelay = true
             socket.keepAlive = true
-            val input = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+            // 【Bug 修复】整个请求用字节流解析：
+            // 1. Content-Length 是字节数，按字节读 body 才能正确结束；
+            //    用 BufferedReader 按字符读，UTF-8 中文（3字节/字符）会导致
+            //    字节数 > 字符数，读完实际字符后阻塞等「不存在的字符」→ 请求超时。
+            // 2. BufferedReader 会预读字节，混用字符流读头 + 字节流读 body
+            //    会导致 body 字节被预读进字符缓冲区，rawIn 读不到。
+            // 所以头也按字节读行（累积到 \r\n），全程单一字节流。
+            val rawIn = socket.getInputStream()
             val output = BufferedOutputStream(socket.getOutputStream())
 
             while (!socket.isClosed && running.get()) {
-                val request = readRequest(input) ?: break
+                val request = readRequest(rawIn) ?: break
                 totalRequests.incrementAndGet()
                 val response = route(request)
                 writeResponse(output, response.status, response.contentType, response.body)
@@ -189,8 +196,28 @@ class McpHttpServer(
         val body: ByteArray,
     )
 
-    private fun readRequest(input: BufferedReader): HttpRequest? {
-        val requestLine = input.readLine() ?: return null
+    /** 按字节读一行（到 \r\n 或 \n），返回 ISO-8859-1 解码的行（头是 ASCII）。 */
+    private fun readLineBytes(rawIn: java.io.InputStream): String? {
+        val sb = java.io.ByteArrayOutputStream(64)
+        var last = -1
+        while (true) {
+            val b = rawIn.read()
+            if (b < 0) {
+                if (sb.size() == 0) return null
+                break
+            }
+            if (b == '\n'.code) break
+            sb.write(b)
+            last = b
+        }
+        val bytes = sb.toByteArray()
+        // 去掉行尾 \r
+        val n = if (bytes.isNotEmpty() && bytes.last() == '\r'.code.toByte()) bytes.size - 1 else bytes.size
+        return String(bytes, 0, n, Charsets.ISO_8859_1)
+    }
+
+    private fun readRequest(rawIn: java.io.InputStream): HttpRequest? {
+        val requestLine = readLineBytes(rawIn) ?: return null
         if (requestLine.isBlank()) return null
         val parts = requestLine.split(' ')
         if (parts.size < 3) return null
@@ -207,22 +234,23 @@ class McpHttpServer(
 
         val headers = HashMap<String, String>()
         while (true) {
-            val line = input.readLine() ?: return null
+            val line = readLineBytes(rawIn) ?: return null
             if (line.isEmpty()) break
             val c = line.indexOf(':')
             if (c > 0) headers[line.substring(0, c).trim().lowercase()] = line.substring(c + 1).trim()
         }
 
+        // Content-Length 是字节数，按字节读 body，最后 UTF-8 解码
         val len = headers["content-length"]?.toIntOrNull() ?: 0
         val body = if (len > 0 && len <= MAX_BODY) {
-            val buf = CharArray(len)
+            val buf = ByteArray(len)
             var read = 0
             while (read < len) {
-                val n = input.read(buf, read, len - read)
+                val n = rawIn.read(buf, read, len - read)
                 if (n < 0) break
                 read += n
             }
-            String(buf, 0, read)
+            String(buf, 0, read, Charsets.UTF_8)
         } else ""
 
         return HttpRequest(parts[0].uppercase(), path, query, headers, body)

@@ -307,8 +307,11 @@ class CaptureStartStopTool(
             }.toString()
         } else {
             val id = a.string("sessionId")
+            // 不传 sessionId 时停当前会话，返回值里带上「实际停掉的是谁」，
+            // 否则 AI 拿到 sessionId="" 不知道停了哪个。
+            val effectiveId = id ?: repo.currentSessionId()
             val ok = repo.stop(id)
-            buildJsonObject { put("stopped", ok); put("sessionId", id ?: "") }.toString()
+            buildJsonObject { put("stopped", ok); put("sessionId", effectiveId ?: "") }.toString()
         }
     }
 }

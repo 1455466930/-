@@ -81,6 +81,14 @@ class ScriptStoreImpl @Inject constructor(
         }
     }
 
+    override fun remove(index: Int): Boolean {
+        val items = load().toMutableList()
+        if (index !in items.indices) return false
+        items.removeAt(index)
+        persist(items)
+        return true
+    }
+
     companion object {
         private const val TAG = "ScriptStore"
         private const val PREFS = "intercept_scripts"

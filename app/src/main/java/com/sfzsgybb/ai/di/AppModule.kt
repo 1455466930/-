@@ -73,6 +73,7 @@ import com.sfzsgybb.ai.mcp.tools.RemoveRewriteRuleTool
 import com.sfzsgybb.ai.mcp.tools.ListScriptsTool
 import com.sfzsgybb.ai.mcp.tools.GetScriptContentTool
 import com.sfzsgybb.ai.mcp.tools.CreateOrUpdateScriptTool
+import com.sfzsgybb.ai.mcp.tools.RemoveScriptTool
 import com.sfzsgybb.ai.mcp.tools.ScriptStore
 import com.sfzsgybb.ai.mcp.tools.ScriptStoreImpl
 
@@ -217,6 +218,7 @@ object AppModule {
         ListScriptsTool(scriptStore),
         GetScriptContentTool(scriptStore),
         CreateOrUpdateScriptTool(scriptStore),
+        RemoveScriptTool(scriptStore),
 
         // ---------- 应用与环境 ----------
         ListAppsTool(appList),
