@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import java.io.File
 import com.sfzsgybb.ai.hook.config.GlobalSwitch.StringKeys
@@ -45,15 +46,38 @@ class ConfigRepository(private val context: Context) {
     // ---------- 全局 ----------
 
     /**
-     * 全局开关的 Flow。
-     * 注意：SharedPreferences 没有 Flow 原生支持，这里用 StateFlow 承载当前值，
-     * 并在本进程内写入时同步更新；跨进程变更靠 revision 判断。
+     * 全局开关集合的响应式 Flow。
+     *
+     * 【为什么之前是死的】
+     * 旧实现 `MutableStateFlow(readAllGlobal()).asStateFlow()` 只在创建时
+     * 读一次快照，之后永不发射新值 —— 设置页的开关点了不变化，
+     * 要重启 APP 才显示新状态。
+     *
+     * 现在用 SharedPreferences 的 listener 驱动：本进程任何写入
+     * （包括 Hook 引擎、MCP 自启逻辑）都会立刻推到订阅方。
      */
-    fun observeGlobal(sw: GlobalSwitch): Flow<Boolean> =
-        MutableStateFlow(getGlobal(sw)).asStateFlow()
+    private val _globalState = MutableStateFlow(readAllGlobal())
+    private var globalListenerRegistered = false
 
-    fun observeAllGlobal(): Flow<Map<String, Boolean>> =
-        MutableStateFlow(readAllGlobal()).asStateFlow()
+    init {
+        registerGlobalListener()
+    }
+
+    private fun registerGlobalListener() {
+        if (globalListenerRegistered) return
+        globalListenerRegistered = true
+        runCatching {
+            prefs().registerOnSharedPreferenceChangeListener { _, key ->
+                if (key == null || GlobalSwitch.entries.any { it.key == key } || key == KEY_REVISION) {
+                    _globalState.value = readAllGlobal()
+                }
+            }
+        }
+    }
+
+    fun observeGlobal(sw: GlobalSwitch): Flow<Boolean> = _globalState.map { it[sw.key] ?: sw.default }
+
+    fun observeAllGlobal(): Flow<Map<String, Boolean>> = _globalState.asStateFlow()
 
     fun readAllGlobal(): Map<String, Boolean> {
         val p = prefs()
@@ -64,6 +88,8 @@ class ConfigRepository(private val context: Context) {
 
     fun setGlobal(sw: GlobalSwitch, value: Boolean) {
         prefs().edit().putBoolean(sw.key, value).apply()
+        // listener 是异步回调，这里直接同步更新，避免 UI 慢半拍
+        _globalState.value = readAllGlobal()
         bumpRevision()
     }
 

@@ -242,7 +242,7 @@ object AppModule {
         val lanEnabled = config.getGlobal(GlobalSwitch.MCP_LAN_ENABLED)
         return McpHttpServer(
             dispatcher = dispatcher,
-            config = McpHttpServer.Config(
+            initialConfig = McpHttpServer.Config(
                 preferredPort = McpNetwork.PREFERRED_PORT,
                 bindLocalhostOnly = !lanEnabled,
                 authToken = null,

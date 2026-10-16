@@ -57,7 +57,14 @@ class SettingsViewModel @Inject constructor(
 
     fun toggleMcp(enable: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (enable) runCatching { mcpServer.start() } else runCatching { mcpServer.stop() }
+            if (enable) {
+                // 同步绑定策略，避免单例里的旧 config 绑错地址
+                val lan = configRepository.getGlobal(GlobalSwitch.MCP_LAN_ENABLED)
+                mcpServer.config = mcpServer.config.copy(bindLocalhostOnly = !lan)
+                runCatching { mcpServer.start() }
+            } else {
+                runCatching { mcpServer.stop() }
+            }
             _state.value = _state.value.copy(mcpRunning = mcpServer.isRunning)
         }
     }
@@ -112,6 +119,9 @@ class McpConsoleViewModel @Inject constructor(
     fun startServer() {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { configRepository.setGlobal(GlobalSwitch.MCP_HTTP_ENABLED, true) }
+            // 同步绑定策略：配置里的局域网开关可能与 server 单例里的旧 config 不一致
+            val lan = configRepository.getGlobal(GlobalSwitch.MCP_LAN_ENABLED)
+            mcpServer.config = mcpServer.config.copy(bindLocalhostOnly = !lan)
             runCatching { mcpServer.stop() }
             runCatching { mcpServer.start() }
             if (configRepository.getGlobal(GlobalSwitch.MCP_KEEP_ALIVE)) {
@@ -134,7 +144,10 @@ class McpConsoleViewModel @Inject constructor(
     fun setLanEnabled(enabled: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             configRepository.setGlobal(GlobalSwitch.MCP_LAN_ENABLED, enabled)
-            // 重启服务使绑定策略生效
+            // 【Bug 修复】McpHttpServer 是单例，构造时只读一次配置。
+            // 必须先更新它的 config 再重启，否则重启后仍绑 127.0.0.1，
+            // 局域网永远连不上。
+            mcpServer.config = mcpServer.config.copy(bindLocalhostOnly = !enabled)
             runCatching { mcpServer.stop() }
             runCatching { mcpServer.start() }
             syncState()

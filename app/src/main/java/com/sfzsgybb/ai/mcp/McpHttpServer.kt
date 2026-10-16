@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class McpHttpServer(
     private val dispatcher: McpDispatcher,
-    private val config: Config = Config(),
+    initialConfig: Config = Config(),
 ) {
     data class Config(
         val preferredPort: Int = McpNetwork.PREFERRED_PORT,
@@ -46,6 +46,17 @@ class McpHttpServer(
         /** 空闲连接超时（毫秒）。 */
         val idleTimeoutMs: Int = 300_000,
     )
+
+    /**
+     * 运行配置。
+     *
+     * 【为什么是 var】
+     * 切换「允许局域网访问」后服务要重启，但 McpHttpServer 是单例、
+     * 构造时只读一次配置。若 config 是 val，重启后仍绑 127.0.0.1，
+     * 局域网永远连不上。改成 var 后由 ViewModel 先更新再 restart。
+     */
+    @Volatile
+    var config: Config = initialConfig
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var serverSocket: ServerSocket? = null
