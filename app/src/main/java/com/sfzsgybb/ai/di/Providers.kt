@@ -161,13 +161,17 @@ class DeviceDatabaseProvider @Inject constructor(
 }
 
 /**
- * Frida 日志内存实现。
+ * Frida 日志实现。
  *
- * 真实场景应由 Frida 脚本通过管道写回（原版走 openFridaWritePipe 的 ParcelFileDescriptor），
- * 这里先落内存环形缓冲，接口保持不变，后续接管道实现时 UI 与 MCP 层无需改动。
+ * 两个来源：
+ *  - 内存缓冲：Hook 进程通过管道写回（预留），或 UI 手动 append
+ *  - FridaEngine 日志文件：frida_inject_script 注入的脚本 console.log 输出
+ * get 时先拉引擎日志并入内存，保证 frida_get_log 能读到真数据。
  */
 @Singleton
-class InMemoryFridaLogProvider @Inject constructor() : FridaLogProvider {
+class InMemoryFridaLogProvider @Inject constructor(
+    private val fridaEngine: com.sfzsgybb.ai.frida.FridaEngine,
+) : FridaLogProvider {
 
     private val store = HashMap<String, ArrayDeque<FridaLogEntry>>()
     private val lock = Any()
@@ -180,6 +184,8 @@ class InMemoryFridaLogProvider @Inject constructor() : FridaLogProvider {
 
     override suspend fun get(packageName: String, scriptName: String?, limit: Int): List<FridaLogEntry> =
         synchronized(lock) {
+            // 先拉 FridaEngine 的日志文件，追加到内存（去重靠时间戳）
+            pullEngineLogs(packageName)
             val q = store[packageName] ?: return emptyList()
             q.asSequence()
                 .filter { scriptName.isNullOrBlank() || it.scriptName == scriptName }
@@ -189,6 +195,23 @@ class InMemoryFridaLogProvider @Inject constructor() : FridaLogProvider {
 
     override suspend fun clear(packageName: String) {
         synchronized(lock) { store.remove(packageName) }
+    }
+
+    /** 把 FridaEngine 的日志文件内容拉到内存缓冲。 */
+    private fun pullEngineLogs(packageName: String) {
+        val lines = fridaEngine.readLog(packageName, 500)
+        if (lines.isEmpty()) return
+        val q = store.getOrPut(packageName) { ArrayDeque() }
+        for (line in lines) {
+            val entry = FridaLogEntry(
+                time = System.currentTimeMillis(),
+                scriptName = "frida",
+                level = "info",
+                message = line,
+            )
+            if (q.size >= MAX_PER_APP) q.removeFirst()
+            q.addLast(entry)
+        }
     }
 
     companion object {

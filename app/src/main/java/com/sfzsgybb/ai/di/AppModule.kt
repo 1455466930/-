@@ -76,6 +76,9 @@ import com.sfzsgybb.ai.mcp.tools.CreateOrUpdateScriptTool
 import com.sfzsgybb.ai.mcp.tools.RemoveScriptTool
 import com.sfzsgybb.ai.mcp.tools.ScriptStore
 import com.sfzsgybb.ai.mcp.tools.ScriptStoreImpl
+import com.sfzsgybb.ai.mcp.tools.FridaInjectTool
+import com.sfzsgybb.ai.mcp.tools.FridaStatusTool
+import com.sfzsgybb.ai.mcp.tools.FridaStopTool
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -129,6 +132,12 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideFridaEngine(
+        @dagger.hilt.android.qualifiers.ApplicationContext context: Context,
+    ): com.sfzsgybb.ai.frida.FridaEngine = com.sfzsgybb.ai.frida.FridaEngine(context)
+
+    @Provides
+    @Singleton
     fun provideInstructionLoader(impl: DefaultInstructionLoader): InstructionLoader = impl
 
     @Provides
@@ -153,6 +162,7 @@ object AppModule {
         analysis: AnalysisRepository,
         vpnController: com.sfzsgybb.ai.vpn.VpnController,
         scriptStore: ScriptStore,
+        fridaEngine: com.sfzsgybb.ai.frida.FridaEngine,
     ): McpToolSet = McpToolSet(
         listOf(
         // ---------- 日志（Hook 引擎） ----------
@@ -225,6 +235,9 @@ object AppModule {
         ListDatabasesTool(dbProvider),
         FridaLogTool(fridaProvider, clear = false),
         FridaLogTool(fridaProvider, clear = true),
+        FridaInjectTool(fridaEngine),
+        FridaStatusTool(fridaEngine),
+        FridaStopTool(fridaEngine),
         HostInstructionsTool(instructions),
         )
     )
