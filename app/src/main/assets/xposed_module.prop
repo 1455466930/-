@@ -1,0 +1,4 @@
+# LSPosed / EdXposed 模块元数据
+minApiVersion=82
+targetApiVersion=100
+staticScope=false

@@ -1,0 +1,156 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+    id 'org.jetbrains.kotlin.plugin.serialization'
+    id 'com.google.devtools.ksp'
+    id 'com.google.dagger.hilt.android'
+}
+
+android {
+    namespace 'com.junge.aidepro'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.junge.aidepro"
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName "3.0.0"
+        vectorDrawables { useSupportLibrary true }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+        // 强制 UTF-8：默认按平台字符集(sun.jnu.encoding)读源码，
+        // 在 GBK 环境的 Windows 上会把中文字面量编译成乱码。
+        freeCompilerArgs += ['-Xsource-file-encoding=UTF-8']
+    }
+
+    // 测试 JVM 同样强制 UTF-8，避免断言里的中文/字节比对受平台编码影响
+    testOptions {
+        unitTests.all {
+            it.systemProperty 'file.encoding', 'UTF-8'
+            it.jvmArgs '-Dfile.encoding=UTF-8'
+            // Gradle 8.11.1 + JDK21 在部分环境下测试 worker 无法解析
+            // worker.org.gradle.process.internal.worker.GradleWorkerMain，
+            // 关闭 worker 复用可规避（代价是测试启动稍慢）。
+            it.forkEvery = 0
+            it.maxParallelForks = 1
+        }
+    }
+
+    // Java 编译编码（Hilt 生成的 Java 代码含中文字符串）
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+
+    buildFeatures {
+        compose true
+        buildConfig true
+        aidl true
+    }
+
+    packaging {
+        resources {
+            excludes += [
+                '/META-INF/{AL2.0,LGPL2.1}',
+                'META-INF/DEPENDENCIES',
+            ]
+        }
+        // 注意：不要设置 dex.useLegacyPackaging = false。
+        // 那会让 dex 以「未压缩」方式存入 APK（为了加快启动），
+        // 实测体积从 21MB 膨胀到 65MB。这里保持默认压缩。
+    }
+
+    lint { abortOnError false }
+
+    hilt {
+        enableAggregatingTask = true
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "AlgorithmAidePro-${variant.versionName}-${variant.buildType.name}.apk"
+        }
+    }
+}
+
+dependencies {
+    def composeBom = platform('androidx.compose:compose-bom:2024.10.01')
+    implementation composeBom
+    androidTestImplementation composeBom
+
+    // Compose
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.activity:activity-compose:1.9.3'
+    implementation 'androidx.navigation:navigation-compose:2.8.4'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+
+    // Core
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.webkit:webkit:1.12.1'
+
+    // Hilt
+    implementation 'com.google.dagger:hilt-android:2.52'
+    ksp 'com.google.dagger:hilt-android-compiler:2.52'
+    implementation 'androidx.hilt:hilt-navigation-compose:1.2.0'
+
+    // DataStore
+    implementation 'androidx.datastore:datastore-preferences:1.1.1'
+
+    // Room
+    implementation 'androidx.room:room-runtime:2.6.1'
+    implementation 'androidx.room:room-ktx:2.6.1'
+    ksp 'androidx.room:room-compiler:2.6.1'
+
+    // Serialization / JSON
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+
+    // Net + MCP
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    // Xposed API (compileOnly - provided by framework at runtime)
+    compileOnly 'de.robv.android.xposed:api:82'
+
+    // BouncyCastle —— MITM 动态签发 X.509 证书用。
+    //
+    // 【为什么 compileOnly】
+    // Android 系统 boot classpath 里已有 bouncycastle.jar
+    // （/apex/com.android.art/javalib/bouncycastle.jar，1168 个类），
+    // 无需重复打包。实测直接 implementation 会让 APK 从 21MB 涨到 72MB。
+    //
+    // 【注意】系统版是裁剪版，包名是 com.android.org.bouncycastle，
+    // 且只有旧版 API（X509V3CertificateGenerator，没有 cert.jcajce/operator 包）。
+    // 因此运行时代码用反射调用，见 mitm/SystemBcSigner.kt。
+    // 这里的 compileOnly 仅用于编译期类型检查，不会打进 APK。
+    compileOnly 'org.bouncycastle:bcprov-jdk18on:1.78.1'
+
+    // Test
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}

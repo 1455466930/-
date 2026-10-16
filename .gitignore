@@ -1,0 +1,35 @@
+# ---------- Gradle ----------
+.gradle/
+build/
+app/build/
+gradle/dist/
+!gradle/wrapper/gradle-wrapper.jar
+
+# ---------- 本地配置（含本机路径，不提交）----------
+local.properties
+
+# ---------- IDE ----------
+.idea/
+*.iml
+*.iws
+*.ipr
+.kotlin/
+
+# ---------- 构建产物 ----------
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.hprof
+captures/
+release/
+
+# ---------- 系统 ----------
+.DS_Store
+Thumbs.db
+*.log
+*.swp
+*~

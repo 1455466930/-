@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Xposed 作用域：默认勾选「系统」以便作用于所有应用；
+         实际生效范围由 APP 内的「应用」列表逐应用开关控制。 -->
+    <string-array name="xposed_scope">
+        <item>android</item>
+        <item>com.android.systemui</item>
+    </string-array>
+</resources>

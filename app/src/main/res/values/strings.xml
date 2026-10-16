@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">算法助手公益版</string>
+    <string name="xposed_description">算法助手公益版：加密算法日志、网络抓包、Hook 配置与 MCP 服务。仅用于自有设备上的应用调试与协议分析。</string>
+</resources>
