@@ -26,34 +26,50 @@ interface LogRecordDao {
     @Update
     suspend fun update(record: LogRecordEntity)
 
-    @Query("SELECT * FROM log_record ORDER BY time DESC, id DESC LIMIT :limit")
-    fun observeLatest(limit: Int = 300): Flow<List<LogRecordEntity>>
+    @Query(
+        """
+        SELECT id, packageName, logName, objName, className, `group`, type,
+               payloadBrief, payloadCrc, resultBrief, resultCrc,
+               size, time, isRead, algoName, keyType, paramDesc, resultKind
+        FROM log_record ORDER BY time DESC, id DESC LIMIT :limit
+        """
+    )
+    fun observeLatest(limit: Int = 300): Flow<List<LogRecordSummaryEntity>>
 
     /** 增量游标分页：取比 (afterTime, afterId) 更旧的一页。 */
     @Query(
         """
-        SELECT * FROM log_record
+        SELECT id, packageName, logName, objName, className, `group`, type,
+               payloadBrief, payloadCrc, resultBrief, resultCrc,
+               size, time, isRead, algoName, keyType, paramDesc, resultKind
+        FROM log_record
         WHERE (time < :afterTime) OR (time = :afterTime AND id < :afterId)
         ORDER BY time DESC, id DESC
         LIMIT :limit
         """
     )
-    suspend fun pageBefore(afterTime: Long, afterId: Long, limit: Int): List<LogRecordEntity>
+    suspend fun pageBefore(afterTime: Long, afterId: Long, limit: Int): List<LogRecordSummaryEntity>
 
     @Query(
         """
-        SELECT * FROM log_record
+        SELECT id, packageName, logName, objName, className, `group`, type,
+               payloadBrief, payloadCrc, resultBrief, resultCrc,
+               size, time, isRead, algoName, keyType, paramDesc, resultKind
+        FROM log_record
         WHERE (:packageName IS NULL OR packageName = :packageName)
           AND (:group < 0 OR `group` = :group)
         ORDER BY time DESC, id DESC
         LIMIT :limit OFFSET :offset
         """
     )
-    fun observeFiltered(packageName: String?, group: Int, limit: Int, offset: Int): Flow<List<LogRecordEntity>>
+    fun observeFiltered(packageName: String?, group: Int, limit: Int, offset: Int): Flow<List<LogRecordSummaryEntity>>
 
     @Query(
         """
-        SELECT * FROM log_record
+        SELECT id, packageName, logName, objName, className, `group`, type,
+               payloadBrief, payloadCrc, resultBrief, resultCrc,
+               size, time, isRead, algoName, keyType, paramDesc, resultKind
+        FROM log_record
         WHERE logName LIKE '%' || :q || '%'
            OR className LIKE '%' || :q || '%'
            OR objName LIKE '%' || :q || '%'
@@ -63,7 +79,7 @@ interface LogRecordDao {
         LIMIT :limit OFFSET :offset
         """
     )
-    suspend fun search(q: String, limit: Int, offset: Int): List<LogRecordEntity>
+    suspend fun search(q: String, limit: Int, offset: Int): List<LogRecordSummaryEntity>
 
     @Query("SELECT * FROM log_record WHERE id = :id")
     suspend fun byId(id: Long): LogRecordEntity?

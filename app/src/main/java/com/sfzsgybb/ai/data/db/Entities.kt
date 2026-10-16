@@ -55,6 +55,37 @@ data class LogRecordEntity(
     override fun hashCode(): Int = id.hashCode()
 }
 
+/**
+ * 日志的轻量投影 —— **不含 payload / results / keyData 三个 BLOB 列**。
+ *
+ * 【为什么必须】
+ * 日志列表用 `SELECT *` 时，一条超大 payload（比如 HTTP 大响应体写入日志）
+ * 会触发 SQLiteBlobTooBigException：Row too big to fit into CursorWindow，
+ * 整页查询连坐失败 → 日志页直接闪退。
+ * 列表只需要 brief 文本和分类字段，BLOB 留给详情页按 id 单条取。
+ */
+data class LogRecordSummaryEntity(
+    val id: Long = 0,
+    val packageName: String? = null,
+    val logName: String = "",
+    val objName: String = "",
+    val className: String = "",
+    val group: Int = 0,
+    val type: Int = -1,
+    val payloadBrief: String = "",
+    val payloadCrc: Long = 0,
+    val resultBrief: String = "",
+    val resultCrc: Long = 0,
+    val size: Int = 0,
+    val time: Long = 0,
+    val isRead: Boolean = false,
+    // ---------- 详情页分类字段 ----------
+    val algoName: String = "",
+    val keyType: String = "",
+    val paramDesc: String = "",
+    val resultKind: String = "",
+)
+
 @Entity(
     tableName = "http_record",
     indices = [Index("sessionId"), Index("time"), Index("host"), Index("url"), Index("packageName")],

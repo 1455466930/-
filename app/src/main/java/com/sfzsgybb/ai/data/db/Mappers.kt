@@ -263,3 +263,34 @@ fun PacketSummaryEntity.toModel() = PacketData(
     wsFrameType = wsFrameType,
     stackTrace = "",
 )
+
+/**
+ * 轻量投影 → 领域模型。
+ *
+ * 【日志列表闪退修复的配套】投影实体不含 payload/results/keyData BLOB，
+ * 转换时这些字段置空 —— 需要正文的调用方必须走 byId(id) 单条取。
+ */
+fun LogRecordSummaryEntity.toModel() = LogRecord(
+    id = id,
+    packageName = packageName,
+    logName = logName,
+    objName = objName,
+    className = className,
+    group = group,
+    type = type,
+    callStack = "",
+    payload = ByteArray(0),
+    payloadBrief = payloadBrief,
+    payloadCrc = payloadCrc,
+    results = emptyList(),
+    resultBrief = resultBrief,
+    resultCrc = resultCrc,
+    size = size,
+    time = time,
+    isRead = isRead,
+    algoName = algoName,
+    keyType = keyType,
+    keyData = ByteArray(0),
+    paramDesc = paramDesc,
+    resultKind = resultKind,
+)
