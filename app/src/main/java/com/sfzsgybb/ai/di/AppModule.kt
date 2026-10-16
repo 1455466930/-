@@ -77,6 +77,7 @@ import com.sfzsgybb.ai.mcp.tools.RemoveScriptTool
 import com.sfzsgybb.ai.mcp.tools.ScriptStore
 import com.sfzsgybb.ai.mcp.tools.ScriptStoreImpl
 import com.sfzsgybb.ai.mcp.tools.FridaInjectTool
+import com.sfzsgybb.ai.mcp.tools.FridaInstallTool
 import com.sfzsgybb.ai.mcp.tools.FridaStatusTool
 import com.sfzsgybb.ai.mcp.tools.FridaStopTool
 
@@ -163,6 +164,7 @@ object AppModule {
         vpnController: com.sfzsgybb.ai.vpn.VpnController,
         scriptStore: ScriptStore,
         fridaEngine: com.sfzsgybb.ai.frida.FridaEngine,
+        @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context,
     ): McpToolSet = McpToolSet(
         listOf(
         // ---------- 日志（Hook 引擎） ----------
@@ -238,6 +240,7 @@ object AppModule {
         FridaInjectTool(fridaEngine),
         FridaStatusTool(fridaEngine),
         FridaStopTool(fridaEngine),
+        FridaInstallTool(context),
         HostInstructionsTool(instructions),
         )
     )

@@ -78,6 +78,13 @@ android {
         // 实测体积从 21MB 膨胀到 65MB。这里保持默认压缩。
     }
 
+    // assets/frida/*.xz 已经是 xz 压缩过的（50MB → 15MB），
+    // 再让 APK 用 deflate 压一遍没有收益（xz 数据不可再压），
+    // 只会拖慢构建。声明不压缩，直接原样存进 APK。
+    androidResources {
+        noCompress += ['xz']
+    }
+
     lint { abortOnError false }
 
     hilt {
@@ -133,6 +140,11 @@ dependencies {
 
     // Net + MCP
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    // XZ 解压 —— 用于释放内置的 frida-inject（xz 压缩 50MB → 15MB）。
+    // 设备上没有 xz 命令（toybox 不支持、无 busybox），所以在 Java 层解。
+    // 纯 Java 实现，约 120KB，换来 APK 少 7MB（15.3 vs 22.4）。
+    implementation 'org.tukaani:xz:1.10'
 
     // Xposed API (compileOnly - provided by framework at runtime)
     compileOnly 'de.robv.android.xposed:api:82'

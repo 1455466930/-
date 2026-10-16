@@ -25,8 +25,6 @@ class FridaEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "FridaEngine"
-        private const val FRIDA_INJECT = "/data/local/tmp/frida-inject"
-        private const val FRIDA_SERVER = "/data/local/tmp/frida-server"
     }
 
     data class ScriptRun(
@@ -50,14 +48,25 @@ class FridaEngine(private val context: Context) {
     /**
      * 注入脚本到目标进程。
      *
+     * 【二进制来源】先调 FridaBinaryManager.ensureAvailable：
+     * arm64 从 assets 释放（零联网），其他 ABI 下载。
+     * 用户自己装过的优先，不覆盖。
+     *
      * @param packageName 目标应用
      * @param scriptName  脚本名（用于日志标识）
      * @param jsCode      JavaScript 源码
      * @return 结果描述
      */
-    fun inject(packageName: String, scriptName: String, jsCode: String): Result {
+    suspend fun inject(packageName: String, scriptName: String, jsCode: String): Result {
         // 已有运行中的注入则先停
         stop(packageName)
+
+        // 0) 确保 frida-inject 可用
+        val bin = FridaBinaryManager.ensureAvailable(context)
+        if (!bin.available) {
+            return Result(false, "frida-inject 不可用：${bin.message}")
+        }
+        Log.i(TAG, "使用 frida-inject: ${bin.path}（${bin.source}）")
 
         return runCatching {
             // 1) 写脚本文件
@@ -77,7 +86,7 @@ class FridaEngine(private val context: Context) {
             // 4) 启动 frida-inject（后台进程，输出重定向到日志文件）
             // -R v8：默认 qjs runtime 没有 Java bridge，hook Java 必须 v8
             // LANG=C.UTF-8：保证 console.log 中文以 UTF-8 输出（su 默认环境无 LANG）
-            val cmd = "LANG=C.UTF-8 $FRIDA_INJECT -R v8 -p $pid -s ${scriptFile.absolutePath} > ${logFile.absolutePath} 2>&1"
+            val cmd = "LANG=C.UTF-8 ${bin.path} -R v8 -p $pid -s ${scriptFile.absolutePath} > ${logFile.absolutePath} 2>&1"
             val process = runSuAsync(cmd)
 
             val run = ScriptRun(packageName, scriptName, pid, process, logFile, System.currentTimeMillis())

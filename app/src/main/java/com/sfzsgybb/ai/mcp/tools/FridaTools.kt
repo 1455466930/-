@@ -88,3 +88,49 @@ class FridaStopTool(private val engine: FridaEngine) : McpToolHandler {
         }
     }
 }
+
+/**
+ * Frida 运行时安装/状态工具。
+ *
+ * arm64 设备从 APK 内置资源释放（零联网）；
+ * 其他 ABI 需要联网下载。可用它查看当前状态或主动安装。
+ */
+class FridaInstallTool(
+    private val context: android.content.Context,
+) : McpToolHandler {
+    override val name = "frida_install"
+    override val description =
+        "查看或安装 Frida 注入运行时（frida-inject）。" +
+            "action=status 查看状态、install 安装。arm64 设备从内置资源释放，无需联网。"
+
+    override val inputSchema = Schema.obj(
+        properties = mapOf(
+            "action" to Schema.string("操作", enum = listOf("status", "install"), default = "status"),
+        ),
+    )
+
+    override suspend fun execute(args: JsonObject): String {
+        val action = Args(args).string("action", false) ?: "status"
+        val st = if (action == "install") {
+            com.sfzsgybb.ai.frida.FridaBinaryManager.ensureAvailable(context)
+        } else {
+            com.sfzsgybb.ai.frida.FridaBinaryManager.existingUsable()
+                ?: com.sfzsgybb.ai.frida.FridaBinaryManager.Status(
+                    available = false,
+                    path = com.sfzsgybb.ai.frida.FridaBinaryManager.TARGET_PATH,
+                    source = com.sfzsgybb.ai.frida.FridaBinaryManager.Source.MISSING,
+                    abi = com.sfzsgybb.ai.frida.FridaBinaryManager.primaryAbi(),
+                    version = null,
+                    message = "未安装。可用 action=install 安装（arm64 从内置资源释放，无需联网）",
+                )
+        }
+        return buildJsonObject {
+            put("available", st.available)
+            put("path", st.path)
+            put("source", st.source.name)
+            put("deviceAbi", st.abi)
+            st.version?.let { put("version", it) }
+            put("message", st.message)
+        }.toString()
+    }
+}
