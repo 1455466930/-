@@ -402,7 +402,7 @@ class HttpInfoTool(private val repo: CaptureRepository) : McpToolHandler {
         val id = Args(args).string("id", required = true)!!
         Cursor.validateId(id)
         val rowId = id.substringBefore('-').toLong()
-        val r = repo.httpById(rowId)
+        val r = repo.httpMetaById(rowId)
             ?: return buildJsonObject { put("error", "record_not_found"); put("id", id) }.toString()
         return buildJsonObject {
             put("id", id)
@@ -450,22 +450,25 @@ class HttpBodyTool(private val repo: CaptureRepository) : McpToolHandler {
         val limit = a.int("limit", 65536)!!.coerceIn(1, 262144)
 
         val rowId = id.substringBefore('-').toLong()
-        val r = repo.httpById(rowId)
+        // 【D1 修复】meta 拿元数据 + substr 切 body，BLOB 不进 CursorWindow
+        val meta = repo.httpMetaById(rowId)
             ?: return buildJsonObject { put("error", "record_not_found"); put("id", id) }.toString()
 
-        val full = if (part == "request") r.requestBody else r.responseBody
-        val slice = if (offset >= full.size) ByteArray(0) else full.copyOfRange(offset, minOf(offset + limit, full.size))
+        val fromResponse = part == "response"
+        val totalSize = if (fromResponse) meta.responseSize else meta.requestSize
+        val slice = repo.httpBodySlice(rowId, offset, limit, fromResponse)
+            ?: ByteArray(0)
         return buildJsonObject {
             put("id", id)
             put("part", part)
             put("mode", mode.name.lowercase())
             put("offset", offset)
-            put("totalSize", full.size)
+            put("totalSize", totalSize)
             put("returned", slice.size)
-            put("hasMore", offset + slice.size < full.size)
+            put("hasMore", offset + slice.size < totalSize)
             put("nextOffset", offset + slice.size)
             put("content", repo.render(slice, mode))
-            put("contentKind", repo.classify(full).label)
+            put("contentKind", repo.classify(slice).label)
         }.toString()
     }
 }
@@ -491,20 +494,50 @@ class NetworkPacketBodyTool(private val repo: CaptureRepository) : McpToolHandle
         val offset = a.int("offset", 0)!!.coerceAtLeast(0)
         val limit = a.int("limit", 65536)!!.coerceIn(1, 262144)
 
+        // 【D6 修复】先按 packet 查；查不到回退到 HTTP 记录 ——
+        // network_list 返回的 id 可能是 HTTP 记录的 id，
+        // 用户拿它来查正文时不应得到 record_not_found。
         val p = repo.packetById(rid)
-            ?: return buildJsonObject { put("error", "record_not_found"); put("recordId", rid) }.toString()
-        val slice = if (offset >= p.payload.size) ByteArray(0)
-        else p.payload.copyOfRange(offset, minOf(offset + limit, p.payload.size))
+        if (p != null) {
+            val slice = if (offset >= p.payload.size) ByteArray(0)
+            else p.payload.copyOfRange(offset, minOf(offset + limit, p.payload.size))
+            return buildJsonObject {
+                put("recordId", rid)
+                put("protocol", p.protocol.name)
+                put("remoteAddress", p.remoteAddress)
+                put("outbound", p.outbound)
+                put("totalSize", p.payload.size)
+                put("returned", slice.size)
+                put("hasMore", offset + slice.size < p.payload.size)
+                put("nextOffset", offset + slice.size)
+                put("content", repo.render(slice, mode))
+            }.toString()
+        }
+
+        // HTTP 回退（meta + substr 切片，防大 BLOB 打爆 CursorWindow）
+        val meta = repo.httpMetaById(rid)
+        if (meta != null) {
+            val fromResponse = offset < meta.responseSize
+            val totalSize = if (fromResponse) meta.responseSize else meta.requestSize
+            val slice = repo.httpBodySlice(rid, offset, limit, fromResponse)
+                ?: ByteArray(0)
+            return buildJsonObject {
+                put("recordId", rid)
+                put("protocol", meta.protocol.name)
+                put("remoteAddress", meta.host)
+                put("outbound", true)
+                put("totalSize", totalSize)
+                put("returned", slice.size)
+                put("hasMore", offset + slice.size < totalSize)
+                put("nextOffset", offset + slice.size)
+                put("content", repo.render(slice, mode))
+            }.toString()
+        }
+
         return buildJsonObject {
+            put("error", "record_not_found")
             put("recordId", rid)
-            put("protocol", p.protocol.name)
-            put("remoteAddress", p.remoteAddress)
-            put("outbound", p.outbound)
-            put("totalSize", p.payload.size)
-            put("returned", slice.size)
-            put("hasMore", offset + slice.size < p.payload.size)
-            put("nextOffset", offset + slice.size)
-            put("content", repo.render(slice, mode))
+            put("hint", "id 不存在：请用 network_list 里的 id，且确认该记录未被删除")
         }.toString()
     }
 }
@@ -526,6 +559,28 @@ class NetworkStacksTool(private val repo: CaptureRepository) : McpToolHandler {
         val rid = a.string("recordId", required = true)!!.toLong()
         val discard = a.bool("discardSystemFrames", true)
         val frames = repo.stackOf(rid, discard)
+
+        // 【D6 修复】栈为空时给明确原因，而不是返回空数组让 AI 猜
+        if (frames.isEmpty()) {
+            // 先确认记录本身是否存在，区分「记录不存在」和「没采集栈」
+            val exists = repo.info(rid) != null
+            return buildJsonObject {
+                put("recordId", rid)
+                putJsonArray("frames") { }
+                put("emptyReason", if (exists) "no_stack_captured" else "record_not_found")
+                if (exists) {
+                    put(
+                        "hint",
+                        "这条记录没有调用栈：抓包侧未采集堆栈（Hook 抓包的 HTTP 记录会带堆栈，" +
+                            "VPN 抓包的报文不采集）。要定位代码请改用日志页的加密调用堆栈，" +
+                            "或在 Hook 抓包模式下重抓。",
+                    )
+                } else {
+                    put("hint", "id 不存在：请用 network_list 里的 id，且确认该记录未被删除")
+                }
+            }.toString()
+        }
+
         return buildJsonObject {
             put("recordId", rid)
             putJsonArray("frames") { frames.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } }

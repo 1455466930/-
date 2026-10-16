@@ -96,6 +96,39 @@ fun HttpRecordEntity.toModel() = HttpRecord(
     mimeType = mimeType,
 )
 
+
+/**
+ * 轻量投影 → 领域模型。
+ *
+ * 【D1 修复的配套】投影实体不含 requestBody/responseBody 两个 BLOB
+ * （防 CursorWindow 被打爆），转换时正文置空 —— 需要正文的调用方
+ * 必须走 byId(id) 按单条取。
+ */
+fun HttpRecordSummaryEntity.toModel() = HttpRecord(
+    id = id,
+    sessionId = sessionId,
+    packageName = packageName,
+    protocol = runCatching { Protocol.valueOf(protocol) }.getOrDefault(Protocol.HTTP),
+    method = method,
+    url = url,
+    host = host,
+    path = path,
+    httpVersion = httpVersion,
+    statusCode = statusCode,
+    statusText = statusText,
+    requestHeaders = requestHeaders.decodeHeaders(),
+    responseHeaders = responseHeaders.decodeHeaders(),
+    requestBody = ByteArray(0),
+    responseBody = ByteArray(0),
+    requestBodyTruncated = requestBodyTruncated,
+    responseBodyTruncated = responseBodyTruncated,
+    requestSize = requestSize,
+    responseSize = responseSize,
+    durationMs = durationMs,
+    time = time,
+    mimeType = mimeType,
+)
+
 fun HttpRecord.toEntity() = HttpRecordEntity(
     id = id,
     sessionId = sessionId,
@@ -111,8 +144,7 @@ fun HttpRecord.toEntity() = HttpRecordEntity(
     requestHeaders = requestHeaders.encode(),
     responseHeaders = responseHeaders.encode(),
     requestBody = requestBody,
-    responseBody = responseBody,
-    requestBodyTruncated = requestBodyTruncated,
+    responseBody = responseBody,    requestBodyTruncated = requestBodyTruncated,
     responseBodyTruncated = responseBodyTruncated,
     requestSize = requestSize,
     responseSize = responseSize,
@@ -209,4 +241,25 @@ fun StackRecord.toEntity() = StackRecordEntity(
     ownerId = ownerId,
     frames = frames,
     time = time,
+)
+
+/**
+ * 轻量投影 → 领域模型。
+ *
+ * 【D1 修复的配套】投影实体不含 payload BLOB，
+ * 转换时 payload 置空 —— 需要正文的调用方必须走 byId(id) 按单条取。
+ */
+fun PacketSummaryEntity.toModel() = PacketData(
+    id = id,
+    sessionId = sessionId,
+    protocol = runCatching { Protocol.valueOf(protocol) }.getOrDefault(Protocol.TCP),
+    remoteAddress = remoteAddress,
+    remotePort = remotePort,
+    localPort = localPort,
+    outbound = outbound,
+    payload = ByteArray(0),
+    size = size,
+    time = time,
+    wsFrameType = wsFrameType,
+    stackTrace = "",
 )

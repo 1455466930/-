@@ -43,29 +43,62 @@ interface CaptureDao {
     /**
      * 增量游标分页。cursor 形如 "v2:<time>:<h|t>:<id>"，
      * 与 MCP network_list 的 nextAfterId 格式保持一致。
+     *
+     * 【D1 修复】用轻量投影（不含 requestBody/responseBody），
+     * 否则一条大响应体就把 CursorWindow 打爆，整个会话查询全废。
      */
     @Query(
         """
-        SELECT * FROM http_record
+        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+               httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
+               requestBodyTruncated, responseBodyTruncated,
+               requestSize, responseSize, durationMs, time, mimeType
+        FROM http_record
         WHERE sessionId = :sessionId
           AND (time < :afterTime OR (time = :afterTime AND id < :afterId))
         ORDER BY time DESC, id DESC LIMIT :limit
         """
     )
-    suspend fun httpPage(sessionId: String, afterTime: Long, afterId: Long, limit: Int): List<HttpRecordEntity>
+    suspend fun httpPage(sessionId: String, afterTime: Long, afterId: Long, limit: Int): List<HttpRecordSummaryEntity>
 
     @Query("SELECT * FROM http_record WHERE id = :id")
     suspend fun httpById(id: Long): HttpRecordEntity?
 
+    /** substr 切 body（BLOB 不进 CursorWindow）。 */
+    @Query("SELECT substr(requestBody, :offset + 1, :length) FROM http_record WHERE id = :id")
+    suspend fun requestBodySlice(id: Long, offset: Int, length: Int): ByteArray?
+
+    @Query("SELECT substr(responseBody, :offset + 1, :length) FROM http_record WHERE id = :id")
+    suspend fun responseBodySlice(id: Long, offset: Int, length: Int): ByteArray?
+
+    /**
+     * 读元数据（不含 BLOB）—— 详情/信息工具用。
+     * 【D1】单行大 BLOB 会把 CursorWindow 打爆。
+     */
     @Query(
         """
-        SELECT * FROM http_record
+        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+               httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
+               requestBodyTruncated, responseBodyTruncated,
+               requestSize, responseSize, durationMs, time, mimeType
+        FROM http_record WHERE id = :id
+        """
+    )
+    suspend fun httpMetaById(id: Long): HttpRecordSummaryEntity?
+
+    @Query(
+        """
+        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+               httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
+               requestBodyTruncated, responseBodyTruncated,
+               requestSize, responseSize, durationMs, time, mimeType
+        FROM http_record
         WHERE sessionId = :sessionId
           AND (url LIKE '%' || :q || '%' OR host LIKE '%' || :q || '%')
         ORDER BY time DESC LIMIT :limit OFFSET :offset
         """
     )
-    suspend fun searchHttp(sessionId: String, q: String, limit: Int, offset: Int): List<HttpRecordEntity>
+    suspend fun searchHttp(sessionId: String, q: String, limit: Int, offset: Int): List<HttpRecordSummaryEntity>
 
     @Query("SELECT COUNT(*) FROM http_record WHERE sessionId = :sessionId")
     suspend fun httpCount(sessionId: String): Long
@@ -83,19 +116,27 @@ interface CaptureDao {
 
     @Query(
         """
-        SELECT * FROM packet_data
+        SELECT id, sessionId, protocol, remoteAddress, remotePort, localPort,
+               outbound, size, time, wsFrameType
+        FROM packet_data
         WHERE sessionId = :sessionId
           AND (time < :afterTime OR (time = :afterTime AND id < :afterId))
         ORDER BY time DESC, id DESC LIMIT :limit
         """
     )
-    suspend fun packetPage(sessionId: String, afterTime: Long, afterId: Long, limit: Int): List<PacketDataEntity>
+    suspend fun packetPage(sessionId: String, afterTime: Long, afterId: Long, limit: Int): List<PacketSummaryEntity>
 
     @Query("SELECT * FROM packet_data WHERE id = :id")
     suspend fun packetById(id: Long): PacketDataEntity?
 
-    @Query("SELECT * FROM packet_data WHERE sessionId = :sessionId ORDER BY time ASC LIMIT :limit")
-    suspend fun packetsAsc(sessionId: String, limit: Int): List<PacketDataEntity>
+    @Query(
+        """
+        SELECT id, sessionId, protocol, remoteAddress, remotePort, localPort,
+               outbound, size, time, wsFrameType
+        FROM packet_data WHERE sessionId = :sessionId ORDER BY time ASC LIMIT :limit
+        """
+    )
+    suspend fun packetsAsc(sessionId: String, limit: Int): List<PacketSummaryEntity>
 
     @Query("SELECT COUNT(*) FROM packet_data WHERE sessionId = :sessionId")
     suspend fun packetCount(sessionId: String): Long

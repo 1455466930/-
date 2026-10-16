@@ -117,9 +117,9 @@ class MitmController @Inject constructor(
 
     private suspend fun persist(tx: HttpTransaction) {
         runCatching {
-            // 用「没有就创建」的版本：VPN 独立运行时也能抓到数据，
-            // 不会因为没有活跃会话而静默丢弃。
-            val sessionId = repository.ensureOrCreateSession()
+            // 【D4 修复】用「没有就创建」的版本，并带上归属应用的包名：
+            // VPN 抓包时每个应用独立一个会话，按应用查流量不用二次过滤。
+            val sessionId = repository.ensureOrCreateSession(tx.ownerPackage ?: "自动抓包")
             if (sessionId == null) {
                 Log.w(TAG, "入库失败：无法获取/创建会话，丢弃 ${tx.url}")
                 persistFailCount.incrementAndGet()

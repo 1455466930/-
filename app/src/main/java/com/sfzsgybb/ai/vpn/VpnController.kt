@@ -58,7 +58,17 @@ class VpnController @Inject constructor(
     ): StartResult {
         if (isRunning) return StartResult.STARTED
 
-        val prepare = prepareIntent()
+        // 【D3 修复】未授权时先尝试 root 直接授予（免去人工弹框）。
+        // appops 的 ACTIVATE_VPN 就是 VpnService.prepare 背后检查的 op，
+        // 置 allow 后 prepare() 返回 null，服务可直接启动 —— AI 全自动。
+        var prepare = prepareIntent()
+        if (prepare != null) {
+            val granted = grantVpnViaRoot()
+            if (granted) {
+                Log.i(TAG, "已通过 root 授予 VPN 权限，无需人工确认")
+                prepare = prepareIntent() // 重新检查
+            }
+        }
         if (prepare != null) {
             lastError = "需要用户授权 VPN 连接"
             return StartResult.NEED_PERMISSION
@@ -80,6 +90,34 @@ class VpnController @Inject constructor(
             Log.e(TAG, "启动 VPN 失败", t)
             StartResult.FAILED
         }
+    }
+
+    /**
+     * 尝试用 root 直接授予 VPN 权限（免人工弹框）。
+     *
+     * 【原理】VpnService.prepare() 背后检查的是 appops 的 ACTIVATE_VPN op，
+     * 用 root 把它置成 allow 后 prepare() 就返回 null。
+     * 依次试三种 appops 写法（不同 Android 版本的命令名略有差异）：
+     *   cmd appops set <pkg> ACTIVATE_VPN allow
+     *   appops set <pkg> ACTIVATE_VPN allow
+     */
+    private fun grantVpnViaRoot(): Boolean {
+        val pkg = context.packageName
+        val cmds = listOf(
+            "cmd appops set $pkg ACTIVATE_VPN allow",
+            "appops set $pkg ACTIVATE_VPN allow",
+        )
+        for (cmd in cmds) {
+            val ok = runCatching {
+                val p = ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
+                val out = p.inputStream.bufferedReader().readText()
+                val code = p.waitFor()
+                code == 0 && !out.contains("Error") && !out.contains("Exception")
+            }.getOrDefault(false)
+            if (ok) return true
+        }
+        Log.w(TAG, "root 授权 VPN 失败（可能无 root 或 appops 受限）")
+        return false
     }
 
     fun stop() {

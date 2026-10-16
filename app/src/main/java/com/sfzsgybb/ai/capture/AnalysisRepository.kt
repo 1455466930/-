@@ -46,6 +46,19 @@ class AnalysisRepository(private val dao: AnalysisDao) {
     suspend fun byIds(ids: List<Long>): List<HttpRecord> = dao.httpByIds(ids).map { it.toModel() }
     suspend fun total(sessionId: String?): Long = dao.totalHttp(sessionId ?: "")
 
+    /**
+     * 取单条记录元数据（不含 BLOB）—— 详情工具用。
+     * 【D1】单行 3.57MB BLOB 会把 CursorWindow 打爆，详情必须走这个。
+     */
+    suspend fun metaById(id: Long): HttpRecord? = dao.httpMetaById(id)?.toModel()
+
+    /**
+     * 用 substr 切 body 的字节切片（BLOB 不进 CursorWindow）。
+     */
+    suspend fun bodySlice(id: Long, offset: Int, length: Int, fromResponse: Boolean): ByteArray? =
+        if (fromResponse) dao.responseBodySlice(id, offset, length)
+        else dao.requestBodySlice(id, offset, length)
+
     /** 跨会话取最近流量（流量列表用）。 */
     suspend fun recentTrafficAll(query: String, limit: Int): List<HttpRecord> =
         dao.recentTrafficAll(query, limit).map { it.toModel() }
@@ -655,6 +668,24 @@ class AnalysisRepository(private val dao: AnalysisDao) {
         val printable = sample.count { it.code in 32..126 || it.code > 0x7F || it == '\n' }
         return if (printable * 100 / maxOf(sample.length, 1) >= 85) text
         else bytes.take(256).joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * 供关键词搜索用的文本解码。
+     *
+     * 【D5 修复】和 decodeText 的关键区别：
+     * decodeText 对二进制会 fallback 成 hex 字符串，
+     * 拿 hex 去 contains 搜索会把「搜 00 / 0a」这类关键词
+     * 误匹配到一堆二进制响应上。
+     * 这个版本二进制直接返回空串 —— 搜不到就是搜不到，
+     * 不会假命中。
+     */
+    fun decodeTextForSearch(bytes: ByteArray): String {
+        if (bytes.isEmpty()) return ""
+        val text = runCatching { String(bytes, Charsets.UTF_8) }.getOrDefault("")
+        val sample = text.take(512)
+        val printable = sample.count { it.code in 32..126 || it.code > 0x7F || it == '\n' }
+        return if (printable * 100 / maxOf(sample.length, 1) >= 85) text else ""
     }
 
     private companion object {

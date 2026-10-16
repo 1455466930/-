@@ -132,19 +132,24 @@ class AnalyzeEncryptedContentTool(private val analysis: AnalysisRepository) : Mc
             put("error", "requestId 必须是数字")
         }.toString()
 
-        val r = analysis.byId(id) ?: return buildJsonObject {
+        // 【D1 修复】meta + substr 切片（最多 256KB 足够分析加密），
+        // 大 BLOB 直接 byId 会把 CursorWindow 打爆
+        val meta = analysis.metaById(id) ?: return buildJsonObject {
             put("error", "未找到 requestId=$id")
         }.toString()
+        val MAX = 256 * 1024
+        val reqBody = analysis.bodySlice(id, 0, MAX, fromResponse = false) ?: ByteArray(0)
+        val respBody = analysis.bodySlice(id, 0, MAX, fromResponse = true) ?: ByteArray(0)
 
         val type = a.string("type", false)?.lowercase() ?: "both"
         return buildJsonObject {
             put("requestId", id)
-            put("url", r.url)
+            put("url", meta.url)
             if (type == "request" || type == "both") {
-                put("requestBody", one(analysis.decodeText(r.requestBody), "requestBody"))
+                put("requestBody", one(analysis.decodeText(reqBody), "requestBody"))
             }
             if (type == "response" || type == "both") {
-                put("responseBody", one(analysis.decodeText(r.responseBody), "responseBody"))
+                put("responseBody", one(analysis.decodeText(respBody), "responseBody"))
             }
         }.toString()
     }

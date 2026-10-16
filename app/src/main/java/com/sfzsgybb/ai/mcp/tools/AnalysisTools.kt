@@ -103,7 +103,14 @@ class GetRequestDetailTool(private val analysis: AnalysisRepository) : McpToolHa
         val includeBody = a.bool("includeBody", true)
         val maxBody = (a.int("maxBodySize", 10000) ?: 10000).coerceAtLeast(100)
 
-        val r = analysis.byId(id) ?: return err("未找到 requestId=$id 的请求")
+        // 【D1 修复】用 metaById（无 BLOB）取元数据，正文用 substr 切片 ——
+        // 单行 3.57MB 的 BLOB 直接进 CursorWindow 会抛 SQLiteBlobTooBigException。
+        val r = analysis.metaById(id) ?: return err("未找到 requestId=$id 的请求")
+        val reqBody = if (includeBody) analysis.bodySlice(id, 0, maxBody, fromResponse = false) ?: ByteArray(0)
+        else ByteArray(0)
+        val respBody = if (includeBody) analysis.bodySlice(id, 0, maxBody, fromResponse = true) ?: ByteArray(0)
+        else ByteArray(0)
+
         return buildJsonObject {
             put("requestId", r.id)
             put("method", r.method)
@@ -123,10 +130,10 @@ class GetRequestDetailTool(private val analysis: AnalysisRepository) : McpToolHa
             put("requestSize", r.requestSize)
             put("responseSize", r.responseSize)
             if (includeBody) {
-                put("requestBody", analysis.decodeText(r.requestBody).take(maxBody))
-                put("responseBody", analysis.decodeText(r.responseBody).take(maxBody))
-                put("requestBodyTruncated", r.requestBody.size > maxBody)
-                put("responseBodyTruncated", r.responseBody.size > maxBody)
+                put("requestBody", analysis.decodeText(reqBody).take(maxBody))
+                put("responseBody", analysis.decodeText(respBody).take(maxBody))
+                put("requestBodyTruncated", r.requestSize > maxBody)
+                put("responseBodyTruncated", r.responseSize > maxBody)
             }
         }.toString()
     }
@@ -154,16 +161,21 @@ class GetRequestBodyTool(private val analysis: AnalysisRepository) : McpToolHand
         val type = a.string("type", false)?.lowercase() ?: "response"
         val maxSize = (a.int("maxSize", 50000) ?: 50000).coerceAtLeast(100)
 
-        val r = analysis.byId(id) ?: return buildJsonObject { put("error", "未找到该请求") }.toString()
-        val raw = if (type == "request") r.requestBody else r.responseBody
+        // 【D1 修复】meta + substr 切片，BLOB 不进 CursorWindow
+        val meta = analysis.metaById(id)
+            ?: return buildJsonObject { put("error", "未找到该请求") }.toString()
+        val fromResponse = type == "response"
+        val totalSize = if (fromResponse) meta.responseSize else meta.requestSize
+        val raw = analysis.bodySlice(id, 0, maxSize, fromResponse)
+            ?: ByteArray(0)
         val text = analysis.decodeText(raw)
 
         return buildJsonObject {
             put("requestId", id)
             put("type", type)
-            put("size", raw.size)
+            put("size", totalSize)
             put("returned", minOf(text.length, maxSize))
-            put("truncated", text.length > maxSize)
+            put("truncated", totalSize > maxSize)
             put("content", text.take(maxSize))
         }.toString()
     }
@@ -205,8 +217,8 @@ class SearchRequestsTool(private val analysis: AnalysisRepository) : McpToolHand
                 it.name.lowercase().contains(headerKw) || it.value.lowercase().contains(headerKw)
             }
             val bodyOk = bodyKw == null ||
-                analysis.decodeText(r.requestBody).lowercase().contains(bodyKw) ||
-                analysis.decodeText(r.responseBody).lowercase().contains(bodyKw)
+                analysis.decodeTextForSearch(r.requestBody).lowercase().contains(bodyKw) ||
+                analysis.decodeTextForSearch(r.responseBody).lowercase().contains(bodyKw)
             urlOk && headerOk && bodyOk
         }.take(limit)
 

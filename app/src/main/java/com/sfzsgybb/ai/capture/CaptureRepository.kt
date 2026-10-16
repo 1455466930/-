@@ -110,7 +110,14 @@ class CaptureRepository(private val dao: CaptureDao) {
 
     // ---------- 会话生命周期 ----------
 
-    suspend fun start(packageName: String, filterLocalRequests: Boolean = true, appLabel: String = ""): CaptureSession {
+    /**
+     * 开始一个会话。
+     *
+     * 【D2 修复】filterLocalRequests 默认 false：
+     * 应用 → 本地代理（127.0.0.1:5266 这类）的回环流量是**真实业务流量**，
+     * 默认过滤会把它们吞掉，造成「抓包失灵」假象。
+     */
+    suspend fun start(packageName: String, filterLocalRequests: Boolean = false, appLabel: String = ""): CaptureSession {
         activeSessionId?.let { dao.updateRecordCount(it, 0) }
         val session = CaptureSession(
             sessionId = UUID.randomUUID().toString(),
@@ -208,13 +215,26 @@ class CaptureRepository(private val dao: CaptureDao) {
 
     // ---------- 写入 ----------
 
-    /** 是否应记录：按过滤规则丢弃本机回环请求。 */
+    /**
+     * 是否应记录：按过滤规则丢弃「自身代理」产生的流量。
+     *
+     * 【D2 修复】之前把 127.0.0.1 / localhost 一刀切全过滤，
+     * 把「应用 → 本地代理（127.0.0.1:5266 这类）」的真实业务流量也吞了。
+     * 现在只过滤我们自己产生的流量：
+     *  - MITM 代理端口（8888）
+     *  - VPN 虚拟网卡地址（10.0.0.2）
+     * 应用连其他本地端口的流量照常记录。
+     */
     fun shouldRecord(url: String?, remoteAddress: String?): Boolean {
         if (!activeFilterLocal) return true
         val host = url?.let { runCatching { URI(it).host }.getOrNull() } ?: remoteAddress
         if (host == null) return true
-        return !(host == "127.0.0.1" || host == "localhost" || host == "::1" ||
-            host.startsWith("10.0.2.2") || host.endsWith(".local"))
+        // 只过滤「我们自己的代理/虚拟网卡」；应用连本地其他端口的保留
+        val port = url?.let { runCatching { URI(it).port }.getOrNull() }
+        val isOurProxy = (host == "127.0.0.1" || host == "localhost") &&
+            (port == 8888 || port == 19191 || port == 19192)
+        val isVpnSelf = host == "10.0.0.2"
+        return !(isOurProxy || isVpnSelf)
     }
 
     suspend fun insertHttp(record: HttpRecord): Long {
@@ -259,6 +279,17 @@ class CaptureRepository(private val dao: CaptureDao) {
     suspend fun httpById(id: Long): HttpRecord? = dao.httpById(id)?.toModel()
     suspend fun packetById(id: Long): PacketData? = dao.packetById(id)?.toModel()
 
+    /** 读元数据（不含 BLOB）——【D1】信息类工具用，避免 CursorWindow 打爆。 */
+    suspend fun httpMetaById(id: Long): HttpRecord? = dao.httpMetaById(id)?.toModel()
+
+    /**
+     * 用 substr 切 HTTP body（BLOB 不进 CursorWindow）。
+     * 【D1】http_body / network_packetBody 的回退路径用这个。
+     */
+    suspend fun httpBodySlice(id: Long, offset: Int, length: Int, fromResponse: Boolean): ByteArray? =
+        if (fromResponse) dao.responseBodySlice(id, offset, length)
+        else dao.requestBodySlice(id, offset, length)
+
     /**
      * 混合列表项。HTTP 与 packet 合并后按 time desc, id desc 排序。
      * kind 首字母用于游标编码（h/t）。
@@ -299,14 +330,14 @@ class CaptureRepository(private val dao: CaptureDao) {
         }
         if (protocolFilter == null || protocolFilter == Protocol.TCP || protocolFilter == Protocol.UNKNOWN) {
             dao.packetPage(sessionId, afterTime, afterId, limit).forEach { e ->
-                val m = e.toModel()
+                // D1：packetPage 是轻量投影（无 payload BLOB），直接用 size 字段
                 items += NetworkItem(
-                    id = m.id, kind = if (m.protocol == Protocol.WEBSOCKET) "websocket" else "tcp",
-                    time = m.time, protocol = m.protocol.name,
+                    id = e.id, kind = "tcp",
+                    time = e.time, protocol = e.protocol,
                     method = null, url = null, statusCode = null,
-                    remoteAddress = "${m.remoteAddress}:${m.remotePort}",
-                    size = m.payload.size,
-                    brief = if (m.outbound) "→ ${m.size}B" else "← ${m.size}B",
+                    remoteAddress = "${e.remoteAddress}:${e.remotePort}",
+                    size = e.size,
+                    brief = if (e.outbound) "→ ${e.size}B" else "← ${e.size}B",
                 )
             }
         }
@@ -327,9 +358,16 @@ class CaptureRepository(private val dao: CaptureDao) {
     }
 
     private suspend fun bodyContains(item: NetworkItem, q: String): Boolean {
+        // 【D1】用 substr 切前 64KB（足够内容搜索），BLOB 不进 CursorWindow。
+        // 注意：这里保留 hex/base64 匹配是**有意的** —— 用户显式搜 hex 时应该命中；
+        // 与 search_requests 的 bodyKeyword 不同（那个是「关键词搜索」，
+        // 二进制 fallback 成 hex 会造成假命中，这里不会，因为 q 是显式给出的）。
+        val SEARCH_SLICE = 64 * 1024
         val bytes = if (item.kind == "http") {
-            val r = dao.httpById(item.id) ?: return false
-            r.requestBody + r.responseBody
+            val req = dao.requestBodySlice(item.id, 0, SEARCH_SLICE) ?: ByteArray(0)
+            val resp = dao.responseBodySlice(item.id, 0, SEARCH_SLICE) ?: ByteArray(0)
+            if (req.size + resp.size >= SEARCH_SLICE) req + resp.take(SEARCH_SLICE - req.size)
+            else req + resp
         } else {
             dao.packetById(item.id)?.payload ?: return false
         }
@@ -343,14 +381,15 @@ class CaptureRepository(private val dao: CaptureDao) {
         return b64.contains(q)
     }
 
-    data class Info(val protocol: String, val summary: String, val size: Int, val time: Long)
+    data class Info(val protocol: String, val summary: String, val size: Long, val time: Long)
 
     suspend fun info(id: Long): Info? {
-        dao.httpById(id)?.let { r ->
-            return Info(r.protocol, "${r.method} ${r.url} → ${r.statusCode}", r.responseBody.size, r.time)
+        // 【D1】meta 无 BLOB；size 用 responseSize 字段（与 BLOB 长度一致）
+        dao.httpMetaById(id)?.let { r ->
+            return Info(r.protocol, "${r.method} ${r.url} → ${r.statusCode}", r.responseSize, r.time)
         }
         dao.packetById(id)?.let { p ->
-            return Info(p.protocol, "${p.remoteAddress}:${p.remotePort} ${if (p.outbound) "发送" else "接收"}", p.payload.size, p.time)
+            return Info(p.protocol, "${p.remoteAddress}:${p.remotePort} ${if (p.outbound) "发送" else "接收"}", p.payload.size.toLong(), p.time)
         }
         return null
     }
@@ -370,7 +409,8 @@ class CaptureRepository(private val dao: CaptureDao) {
         for (raw in ids) {
             val main = raw.substringBefore('-')
             val n = main.toLongOrNull() ?: continue
-            if (dao.httpById(n) != null) httpIds += n else pktIds += n
+            // 【D1】存在性判断用 meta（无 BLOB），避免大记录打爆 CursorWindow
+            if (dao.httpMetaById(n) != null) httpIds += n else pktIds += n
         }
         if (httpIds.isNotEmpty()) dao.deleteHttp(httpIds)
         if (pktIds.isNotEmpty()) dao.deletePackets(pktIds)

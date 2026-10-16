@@ -21,7 +21,11 @@ interface AnalysisDao {
      */
     @Query(
         """
-        SELECT * FROM http_record
+        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+               httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
+               requestBodyTruncated, responseBodyTruncated,
+               requestSize, responseSize, durationMs, time, mimeType
+        FROM http_record
         WHERE (:sessionId = '' OR sessionId = :sessionId)
           AND (:domain = '' OR host LIKE '%' || :domain || '%')
           AND (:method = '' OR method = :method)
@@ -39,7 +43,7 @@ interface AnalysisDao {
         urlKeyword: String,
         limit: Int,
         offset: Int,
-    ): List<HttpRecordEntity>
+    ): List<HttpRecordSummaryEntity>
 
     @Query(
         """
@@ -62,13 +66,17 @@ interface AnalysisDao {
     /** 取最近 N 条（分析工具用）。 */
     @Query(
         """
-        SELECT * FROM http_record
+        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+               httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
+               requestBodyTruncated, responseBodyTruncated,
+               requestSize, responseSize, durationMs, time, mimeType
+        FROM http_record
         WHERE (:sessionId = '' OR sessionId = :sessionId)
           AND (:domain = '' OR host LIKE '%' || :domain || '%')
         ORDER BY time DESC LIMIT :limit
         """
     )
-    suspend fun recentHttp(sessionId: String, domain: String, limit: Int): List<HttpRecordEntity>
+    suspend fun recentHttp(sessionId: String, domain: String, limit: Int): List<HttpRecordSummaryEntity>
 
     /**
      * 跨会话取最近的 HTTP 记录（流量列表用）。
@@ -78,12 +86,16 @@ interface AnalysisDao {
      */
     @Query(
         """
-        SELECT * FROM http_record
+        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+               httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
+               requestBodyTruncated, responseBodyTruncated,
+               requestSize, responseSize, durationMs, time, mimeType
+        FROM http_record
         WHERE (:query = '' OR url LIKE '%' || :query || '%' OR host LIKE '%' || :query || '%')
         ORDER BY id DESC LIMIT :limit
         """
     )
-    suspend fun recentTrafficAll(query: String, limit: Int): List<HttpRecordEntity>
+    suspend fun recentTrafficAll(query: String, limit: Int): List<HttpRecordSummaryEntity>
 
     @Query(
         """
@@ -95,6 +107,33 @@ interface AnalysisDao {
 
     @Query("SELECT * FROM http_record WHERE id = :id")
     suspend fun httpById(id: Long): HttpRecordEntity?
+
+    // ---------- 大 BLOB 安全读取（D1 修复） ----------
+
+    /**
+     * 读元数据（不含两个 BLOB）—— 详情工具用它，避免单行大 BLOB
+     * 直接把 CursorWindow 打爆（3.57MB 单行就会炸）。
+     */
+    @Query(
+        """
+        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+               httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
+               requestBodyTruncated, responseBodyTruncated,
+               requestSize, responseSize, durationMs, time, mimeType
+        FROM http_record WHERE id = :id
+        """
+    )
+    suspend fun httpMetaById(id: Long): HttpRecordSummaryEntity?
+
+    /**
+     * 用 substr 切 body —— SQLite 在引擎内截断，**BLOB 不会整体进 CursorWindow**。
+     * @param offset 从 0 起的字节偏移
+     */
+    @Query("SELECT substr(requestBody, :offset + 1, :length) FROM http_record WHERE id = :id")
+    suspend fun requestBodySlice(id: Long, offset: Int, length: Int): ByteArray?
+
+    @Query("SELECT substr(responseBody, :offset + 1, :length) FROM http_record WHERE id = :id")
+    suspend fun responseBodySlice(id: Long, offset: Int, length: Int): ByteArray?
 
     /** 按应用包名分组统计（抓包页展示用）。 */
     @Query(
@@ -108,16 +147,28 @@ interface AnalysisDao {
     /** 取指定包名的最近 HTTP 记录。 */
     @Query(
         """
-        SELECT * FROM http_record
+        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+               httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
+               requestBodyTruncated, responseBodyTruncated,
+               requestSize, responseSize, durationMs, time, mimeType
+        FROM http_record
         WHERE packageName = :pkg
         ORDER BY id DESC LIMIT :limit
         """
     )
-    suspend fun httpByPackage(pkg: String, limit: Int): List<HttpRecordEntity>
+    suspend fun httpByPackage(pkg: String, limit: Int): List<HttpRecordSummaryEntity>
 
     /** 最近抓到的所有 HTTP 记录（跨包名，抓包页「全部」视图）。 */
-    @Query("SELECT * FROM http_record ORDER BY id DESC LIMIT :limit")
-    suspend fun recentHttpAll(limit: Int): List<HttpRecordEntity>
+    @Query(
+        """
+        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+               httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
+               requestBodyTruncated, responseBodyTruncated,
+               requestSize, responseSize, durationMs, time, mimeType
+        FROM http_record ORDER BY id DESC LIMIT :limit
+        """
+    )
+    suspend fun recentHttpAll(limit: Int): List<HttpRecordSummaryEntity>
 
     @Query("SELECT * FROM http_record WHERE id IN (:ids)")
     suspend fun httpByIds(ids: List<Long>): List<HttpRecordEntity>
@@ -194,7 +245,11 @@ interface AnalysisDao {
 
     @Query(
         """
-        SELECT * FROM http_record
+        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+               httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
+               requestBodyTruncated, responseBodyTruncated,
+               requestSize, responseSize, durationMs, time, mimeType
+        FROM http_record
         WHERE (:sessionId = '' OR sessionId = :sessionId)
           AND (:startTime = 0 OR time >= :startTime)
           AND (:endTime = 0 OR time <= :endTime)
@@ -203,7 +258,7 @@ interface AnalysisDao {
     )
     suspend fun scanForBodySearch(
         sessionId: String, startTime: Long, endTime: Long, scanLimit: Int,
-    ): List<HttpRecordEntity>
+    ): List<HttpRecordSummaryEntity>
 
     // ---------- 删除 ----------
 

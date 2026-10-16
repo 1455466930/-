@@ -336,8 +336,12 @@ class ReplayRequestTool(private val analysis: AnalysisRepository) : McpToolHandl
             ?: return buildJsonObject { put("error", "requestId 必须是数字") }.toString()
         val timeout = (a.int("timeoutSeconds", 30) ?: 30).coerceIn(1, 120) * 1000
 
-        val r = analysis.byId(id)
+        // 【D1 修复】meta 取元数据 + substr 切请求体（最多 1MB，够重放），
+        // 整 BLOB 进 CursorWindow 会炸
+        val r = analysis.metaById(id)
             ?: return buildJsonObject { put("error", "未找到 requestId=$id") }.toString()
+        val MAX_REPLAY = 1024 * 1024
+        val reqBodyBytes = analysis.bodySlice(id, 0, MAX_REPLAY, fromResponse = false)
 
         val overrideHeaders = a.string("headers")?.let { h ->
             runCatching {
@@ -373,8 +377,8 @@ class ReplayRequestTool(private val analysis: AnalysisRepository) : McpToolHandl
                 runCatching { conn.setRequestProperty(k, v) }
             }
 
-            // body
-            val bodyBytes = (overrideBody ?: analysis.decodeText(r.requestBody))
+            // body：优先用显式传的 body，否则用切片请求体
+            val bodyBytes = (overrideBody ?: analysis.decodeText(reqBodyBytes ?: ByteArray(0)))
                 .takeIf { it.isNotBlank() }?.toByteArray()
             if (bodyBytes != null) {
                 conn.doOutput = true

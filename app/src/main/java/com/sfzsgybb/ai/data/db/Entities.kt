@@ -93,6 +93,42 @@ data class HttpRecordEntity(
     override fun hashCode(): Int = id.hashCode()
 }
 
+/**
+ * HTTP 记录的轻量投影 —— **不含 requestBody / responseBody 两个 BLOB**。
+ *
+ * 【为什么必须有这个类】
+ * Android SQLite 的 CursorWindow 上限约 2MB，一条 3.57MB 的响应体
+ * 就会把整个窗口打爆。只要列表/分页/搜索/统计里的任何一条记录
+ * 用 `SELECT *` 拉进窗口，那个查询就整体报
+ * `IllegalStateException: Couldn't read row`，而且**同一个会话里
+ * 所有后续查询都跟着报错**（窗口被脏数据占用）。
+ *
+ * 所以：列表类查询一律用本投影（BLOB 不进来），
+ * 只有按 id 取单条的详情查询才用 HttpRecordEntity。
+ */
+class HttpRecordSummaryEntity(
+    val id: Long = 0,
+    val sessionId: String = "",
+    val packageName: String = "",
+    val protocol: String = "HTTP",
+    val method: String = "",
+    val url: String = "",
+    val host: String = "",
+    val path: String = "",
+    val httpVersion: String = "1.1",
+    val statusCode: Int = 0,
+    val statusText: String = "",
+    val requestHeaders: List<String> = emptyList(),
+    val responseHeaders: List<String> = emptyList(),
+    val requestBodyTruncated: Boolean = false,
+    val responseBodyTruncated: Boolean = false,
+    val requestSize: Long = 0,
+    val responseSize: Long = 0,
+    val durationMs: Long = 0,
+    val time: Long = 0,
+    val mimeType: String = "",
+)
+
 @Entity(
     tableName = "packet_data",
     indices = [Index("sessionId"), Index("time"), Index("remoteAddress")],
@@ -128,7 +164,15 @@ data class CaptureSessionEntity(
     val state: String = "IDLE",
     val startedAt: Long = 0,
     val stoppedAt: Long? = null,
-    val filterLocalRequests: Boolean = true,
+    /**
+     * 是否过滤本机回环请求。
+     *
+     * 【D2 修复】默认改回 false：
+     * 应用 → 本地代理（127.0.0.1:5266 这类）的回环流量是**真实业务流量**，
+     * 默认过滤会把它们全部吞掉，造成「抓包失灵」的假象。
+     * 需要时用户显式开启，而不是默认静默丢弃。
+     */
+    val filterLocalRequests: Boolean = false,
     val recordCount: Int = 0,
 )
 
@@ -151,4 +195,23 @@ data class StackRecordEntity(
     val ownerId: Long = 0,
     val frames: List<String> = emptyList(),
     val time: Long = 0,
+)
+
+/**
+ * 报文的轻量投影 —— **不含 payload BLOB**。
+ *
+ * 同 HttpRecordSummaryEntity：列表/分页不能带 BLOB，
+ * 否则 CursorWindow 被打爆后整个会话的查询全废。
+ */
+class PacketSummaryEntity(
+    val id: Long = 0,
+    val sessionId: String = "",
+    val protocol: String = "TCP",
+    val remoteAddress: String = "",
+    val remotePort: Int = 0,
+    val localPort: Int = 0,
+    val outbound: Boolean = true,
+    val size: Int = 0,
+    val time: Long = 0,
+    val wsFrameType: String = "",
 )
