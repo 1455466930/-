@@ -402,6 +402,49 @@ fun CaptureScreen(
                     }
                 }
 
+                // ---------- 来源筛选 ----------
+                // Hook 抓包（Java 层明文）和代理抓包（路由层+MITM 解密）是两条链路，
+                // 数据混在一起时分不清。这里让用户明确选择要看哪一种。
+                item {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        SectionHeader("数据来源")
+                        Spacer(Modifier.weight(1f))
+                        // 提示当前有哪些抓包在运行
+                        if (state.vpnRunning) {
+                            Chip("代理运行中", MaterialTheme.colorScheme.primary)
+                        }
+                        if (state.running) {
+                            Chip("Hook 运行中", MaterialTheme.colorScheme.secondary)
+                        }
+                    }
+                }
+
+                item {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val sources = listOf(
+                            "" to "全部",
+                            "hook" to "Hook 抓包",
+                            "vpn" to "代理抓包",
+                        )
+                        sources.forEach { (value, label) ->
+                            FilterChip(
+                                selected = state.trafficSource == value,
+                                onClick = { vm.setTrafficSource(value) },
+                                label = { Text(label, fontSize = 12.sp) },
+                            )
+                        }
+                    }
+                }
+
                 // ---------- 目标应用选择 ----------
                 item {
                     SectionHeader("抓取目标应用")
@@ -1053,6 +1096,17 @@ fun TrafficRow(item: TrafficItem, onClick: () -> Unit = {}) {
                     fontFamily = FontFamily.Monospace,
                     color = methodColor(item.method),
                     modifier = Modifier.width(46.dp),
+                )
+                // 来源标记：H=Hook 抓包 / P=代理抓包
+                // 列表里两种来源混排时，一眼区分数据从哪条链路来
+                Text(
+                    if (item.source == "vpn") "P" else "H",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (item.source == "vpn")
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.width(12.dp),
                 )
                 // 软件名（包名转显示名由调用方处理，这里显示包名简称）
                 if (item.packageName.isNotBlank()) {

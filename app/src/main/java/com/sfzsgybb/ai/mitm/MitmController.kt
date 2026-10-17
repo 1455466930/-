@@ -130,6 +130,8 @@ class MitmController @Inject constructor(
             repository.insertHttp(
                 com.sfzsgybb.ai.data.model.HttpRecord(
                     sessionId = sessionId,
+                    // 【来源标记】这条数据来自代理抓包（路由层 + MITM 解密）
+                    source = "vpn",
                     // VPN 通过 META 头传来的应用包名；系统代理模式下为空
                     packageName = tx.ownerPackage ?: "",
                     protocol = com.sfzsgybb.ai.data.model.Protocol.HTTP,

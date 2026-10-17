@@ -60,10 +60,11 @@ class AnalysisRepository(private val dao: AnalysisDao) {
         else dao.requestBodySlice(id, offset, length)
 
     /** 跨会话取最近流量（流量列表用）。 */
-    suspend fun recentTrafficAll(query: String, limit: Int): List<HttpRecord> =
-        dao.recentTrafficAll(query, limit).map { it.toModel() }
+    suspend fun recentTrafficAll(query: String, limit: Int, source: String = ""): List<HttpRecord> =
+        dao.recentTrafficAll(query, limit, source).map { it.toModel() }
 
-    suspend fun countTrafficAll(query: String): Long = dao.countTrafficAll(query)
+    suspend fun countTrafficAll(query: String, source: String = ""): Long =
+        dao.countTrafficAll(query, source)
 
     /** 按包名分组统计。 */
     suspend fun groupByPackage(): List<Pair<String, Int>> =
@@ -73,9 +74,9 @@ class AnalysisRepository(private val dao: AnalysisDao) {
     suspend fun httpByPackage(pkg: String, limit: Int): List<HttpRecord> =
         dao.httpByPackage(pkg, limit).map { it.toModel() }
 
-    /** 最近所有记录（跨包名）。 */
-    suspend fun recentHttpAll(limit: Int): List<HttpRecord> =
-        dao.recentHttpAll(limit).map { it.toModel() }
+    /** 最近所有记录（跨包名）。source 为空表示不过滤来源。 */
+    suspend fun recentHttpAll(limit: Int, source: String = ""): List<HttpRecord> =
+        dao.recentHttpAll(limit, source).map { it.toModel() }
 
     /** 按时间范围扫描（用于内容搜索，因为正文在 SQL 里搜不了）。 */
     suspend fun scan(sessionId: String, startTime: Long, endTime: Long, limit: Int): List<HttpRecord> =

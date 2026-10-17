@@ -161,22 +161,36 @@ class CaptureVpnService : VpnService() {
                 builder.setMetered(false)
             }
 
-            // 排除自己，避免流量回环
-            runCatching { builder.addDisallowedApplication(packageName) }
-                .onFailure { Log.w(TAG, "排除自身失败: ${it.message}") }
+            // 【关键】Android 规定 addAllowedApplication 与 addDisallowedApplication
+            // **不能混用** —— 先调哪个就锁死哪个模式，再调另一个会抛
+            // IllegalStateException("already called")。
+            //
+            // 之前的写法先 addDisallowedApplication(自己) 排除自身，
+            // 再 addAllowedApplication(白名单) 就全部失败 →
+            // VPN 变成全局接管，把 shell、系统应用等所有流量都抓进来。
+            //
+            // 正确做法：
+            //  白名单模式 → 只列允许的应用，**不把自己列进去**就等于排除自己，
+            //              绝不能再调 addDisallowedApplication
+            //  全局模式   → 只调 addDisallowedApplication 排除自己
+            val whitelist = allowedApps?.filter { it.isNotBlank() && it != packageName }.orEmpty()
 
-            if (!allowedApps.isNullOrEmpty()) {
-                // 只代理白名单应用
-                allowedApps.forEach { pkg ->
+            if (whitelist.isNotEmpty()) {
+                // 白名单模式：只代理这些应用（自己不列进来 = 自动排除）
+                whitelist.forEach { pkg ->
                     runCatching { builder.addAllowedApplication(pkg) }
                         .onFailure { Log.w(TAG, "加入白名单失败 $pkg: ${it.message}") }
                 }
-                // 白名单模式下必须再排除自己一次
+                Log.i(TAG, "白名单模式：${whitelist.size} 个应用 $whitelist")
+            } else {
+                // 全局模式：排除自己，避免流量回环
                 runCatching { builder.addDisallowedApplication(packageName) }
-            } else if (!disallowedApps.isNullOrEmpty()) {
-                disallowedApps.forEach { pkg ->
+                    .onFailure { Log.w(TAG, "排除自身失败: ${it.message}") }
+                // 额外的排除名单
+                disallowedApps?.filter { it.isNotBlank() }?.forEach { pkg ->
                     runCatching { builder.addDisallowedApplication(pkg) }
                 }
+                Log.i(TAG, "全局模式：接管全部应用（除自己）")
             }
 
             builder.establish()

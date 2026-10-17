@@ -41,6 +41,8 @@ class CaptureRepository(private val dao: CaptureDao) {
     @Volatile private var activeSessionId: String? = null
     @Volatile private var activePackage: String? = null
     @Volatile private var activeFilterLocal: Boolean = true
+    /** 当前活跃会话的抓包模式（hook / vpn）。 */
+    @Volatile private var activeSource: String = "hook"
     @Volatile private var activeStartedAt: Long = 0L
 
     /**
@@ -83,7 +85,10 @@ class CaptureRepository(private val dao: CaptureDao) {
      *  2. 数据库里的 RUNNING 会话且包名一致 → 恢复复用
      *  3. 都没有 → 新建一个（包名取传入值）
      */
-    suspend fun ensureOrCreateSession(packageName: String = "自动抓包"): String? {
+    suspend fun ensureOrCreateSession(
+        packageName: String = "自动抓包",
+        source: String = "hook",
+    ): String? {
         // 1) 内存中的活跃会话，包名一致才复用
         activeSessionId?.let { id ->
             if (activePackage == packageName) return id
@@ -94,13 +99,14 @@ class CaptureRepository(private val dao: CaptureDao) {
             activeSessionId = running.sessionId
             activePackage = running.packageName
             activeFilterLocal = running.filterLocalRequests
+            activeSource = running.source
             activeStartedAt = running.startedAt
             return running.sessionId
         }
         // 3) 都没有匹配的 → 新建
         return try {
-            val s = start(packageName)
-            android.util.Log.i("CaptureRepository", "自动创建会话: ${s.sessionId} pkg=$packageName")
+            val s = start(packageName, source = source)
+            android.util.Log.i("CaptureRepository", "自动创建会话: ${s.sessionId} pkg=$packageName source=$source")
             activeSessionId = s.sessionId
             s.sessionId
         } catch (t: Throwable) {
@@ -131,10 +137,17 @@ class CaptureRepository(private val dao: CaptureDao) {
      * 应用 → 本地代理（127.0.0.1:5266 这类）的回环流量是**真实业务流量**，
      * 默认过滤会把它们吞掉，造成「抓包失灵」假象。
      */
-    suspend fun start(packageName: String, filterLocalRequests: Boolean = false, appLabel: String = ""): CaptureSession {
+    suspend fun start(
+        packageName: String,
+        filterLocalRequests: Boolean = false,
+        appLabel: String = "",
+        /** 抓包模式：hook / vpn。决定这批数据属于哪条链路。 */
+        source: String = "hook",
+    ): CaptureSession {
         activeSessionId?.let { dao.updateRecordCount(it, 0) }
         val session = CaptureSession(
             sessionId = UUID.randomUUID().toString(),
+            source = source,
             packageName = packageName,
             appLabel = appLabel,
             state = CaptureState.RUNNING,
@@ -145,6 +158,7 @@ class CaptureRepository(private val dao: CaptureDao) {
         activeSessionId = session.sessionId
         activePackage = packageName
         activeFilterLocal = filterLocalRequests
+        activeSource = source
         activeStartedAt = session.startedAt
         return session
     }

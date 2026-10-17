@@ -88,11 +88,24 @@ data class LogRecordSummaryEntity(
 
 @Entity(
     tableName = "http_record",
-    indices = [Index("sessionId"), Index("time"), Index("host"), Index("url"), Index("packageName")],
+    indices = [
+        Index("sessionId"), Index("time"), Index("host"), Index("url"),
+        Index("packageName"), Index("source"),
+    ],
 )
 data class HttpRecordEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val sessionId: String = "",
+    /**
+     * 数据来源：`hook` / `vpn`。
+     *
+     * 【为什么要这个字段】
+     * Hook 抓包（Java 层明文）和代理抓包（路由层 + MITM 解密）是两条完全不同的链路，
+     * 同一条请求可能两边都抓得到。之前没有来源标记，UI 和 MCP 只能把所有数据
+     * 堆在一起看 —— 用户开了 Hook 抓包，列表里却混着代理抓的流量，分不清谁是谁。
+     * 加这个字段后可以按当前抓包模式过滤。
+     */
+    val source: String = "hook",
     /** 归属的应用包名（Hook 抓包时是目标应用，VPN 抓包时按进程归属） */
     val packageName: String = "",
     val protocol: String = "HTTP",
@@ -140,6 +153,8 @@ data class HttpRecordEntity(
 class HttpRecordSummaryEntity(
     val id: Long = 0,
     val sessionId: String = "",
+    /** 数据来源：hook / vpn */
+    val source: String = "hook",
     val packageName: String = "",
     val protocol: String = "HTTP",
     val method: String = "",
@@ -190,6 +205,13 @@ data class PacketDataEntity(
 @Entity(tableName = "capture_session", indices = [Index("startedAt")])
 data class CaptureSessionEntity(
     @PrimaryKey val sessionId: String,
+    /**
+     * 这个会话属于哪种抓包模式：hook / vpn。
+     *
+     * Hook 会话由配置驱动（没有「开始/停止」动作），VPN 会话由服务启动创建。
+     * 分开标记后，抓包页才能按当前模式展示对应会话的数据。
+     */
+    val source: String = "hook",
     val packageName: String = "",
     val appLabel: String = "",
     val state: String = "IDLE",

@@ -24,6 +24,7 @@ import javax.inject.Singleton
 @Singleton
 class VpnControlTool @Inject constructor(
     private val controller: VpnController,
+    private val appList: AppListProvider,
 ) : McpToolHandler {
 
     override val name = "vpn_capture"
@@ -41,6 +42,8 @@ class VpnControlTool @Inject constructor(
             ),
             "proxyHost" to Schema.string("上游代理地址，默认 127.0.0.1"),
             "proxyPort" to Schema.integer("上游代理端口，默认 8888"),
+            "packageName" to Schema.string("只抓这个应用（可选，多个用逗号分隔）"),
+            "global" to Schema.boolean("true = 全局接管所有应用；默认 false 只抓已启用 Hook 的应用"),
         ),
         required = listOf("action"),
     )
@@ -51,12 +54,44 @@ class VpnControlTool @Inject constructor(
             "start" -> {
                 val host = a.string("proxyHost") ?: CaptureVpnService.DEFAULT_PROXY_HOST
                 val port = a.int("proxyPort") ?: CaptureVpnService.DEFAULT_PROXY_PORT
-                when (controller.start(host, port)) {
+                // 【重要】VPN 默认不是全局：只抓已启用 Hook 的应用
+                // （和 UI 行为保持一致），避免把 shell/系统应用的流量也卷进来。
+                // 显式传 global=true 才接管全部。
+                val global = a.bool("global", false)
+                val allow = if (global) {
+                    null
+                } else {
+                    // 优先用显式 packageName，否则取已启用 Hook 的应用
+                    val explicit = a.string("packageName")
+                        ?.split(',')?.map { it.trim() }?.filter { it.isNotBlank() }
+                    if (!explicit.isNullOrEmpty()) {
+                        explicit
+                    } else {
+                        runCatching {
+                            appList.listApps(onlyEnabled = true, query = null, limit = 500)
+                                .map { it.packageName }
+                        }.getOrDefault(emptyList())
+                    }
+                }
+                if (!global && allow.isNullOrEmpty()) {
+                    return buildJsonObject {
+                        put("started", false)
+                        put("error", "no_target_apps")
+                        put(
+                            "message",
+                            "没有可抓取的应用。请先在「应用」页启用 Hook，" +
+                                "或传 packageName 指定应用，或传 global=true 接管全部。"
+                        )
+                    }.toString()
+                }
+                when (controller.start(host, port, allowApps = allow)) {
                     VpnController.StartResult.STARTED -> buildJsonObject {
                         put("started", true)
                         put("proxyHost", host)
                         put("proxyPort", port)
                         put("permission", true)
+                        put("global", global)
+                        put("targetApps", allow?.size ?: -1)
                     }.toString()
 
                     VpnController.StartResult.NEED_PERMISSION -> buildJsonObject {

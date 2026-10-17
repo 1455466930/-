@@ -35,6 +35,8 @@ data class TrafficItem(
     val time: Long,
     val sessionId: String,
     val packageName: String,
+    /** 数据来源：hook / vpn */
+    val source: String = "hook",
 )
 
 /** 按包名分组的抓包数据。 */
@@ -105,6 +107,12 @@ data class CaptureUiState(
     val packageGroups: List<PackageGroup> = emptyList(),
     /** 当前选中的包名（null = 全部） */
     val selectedPackage: String? = null,
+    /**
+     * 流量列表显示的来源筛选：`""`=全部 / `hook`=Hook 抓包 / `vpn`=代理抓包。
+     *
+     * 默认 all —— 用户第一次进来看全部，之后可手动切。
+     */
+    val trafficSource: String = "",
     /** 已启用 Hook 的应用（软件名 + 包名，用于目标选择） */
     val enabledApps: List<Pair<String, String>> = emptyList(),
 )
@@ -334,16 +342,30 @@ class CaptureViewModel @Inject constructor(
 
     private var trafficTicker: Job? = null
 
-    /** 加载最近流量（按选中包名过滤）。 */
+    /**
+     * 当前要显示的抓包来源。
+     *
+     * 【为什么需要】
+     * Hook 抓包（Java 层）和代理抓包（路由层+MITM）是两条链路，
+     * 数据混在一起时用户分不清。这个字段决定列表显示哪一类。
+     */
+    fun setTrafficSource(source: String) {
+        _state.value = _state.value.copy(trafficSource = source)
+        loadTraffic()
+    }
+
+    /** 加载最近流量（按选中包名 + 来源过滤）。 */
     fun loadTraffic() {
         viewModelScope.launch {
             runCatching {
                 val selPkg = _state.value.selectedPackage
+                val src = _state.value.trafficSource
                 // 按选中包名过滤：选中了具体应用就只看它，null 看全部
                 val raw = if (selPkg != null) {
                     analysis.httpByPackage(selPkg, 300)
                 } else {
-                    analysis.recentHttpAll(300)
+                    // source="" 表示全部；hook / vpn 只取对应来源
+                    analysis.recentHttpAll(300, src)
                 }
                 val items = raw.map { r ->
                     TrafficItem(
@@ -359,6 +381,7 @@ class CaptureViewModel @Inject constructor(
                         time = r.time,
                         sessionId = r.sessionId,
                         packageName = r.packageName,
+                        source = r.source,
                     )
                 }
                 _state.value = _state.value.copy(recentTraffic = items)

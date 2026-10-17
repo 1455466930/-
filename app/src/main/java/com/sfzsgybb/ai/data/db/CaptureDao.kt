@@ -49,7 +49,7 @@ interface CaptureDao {
      */
     @Query(
         """
-        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+        SELECT id, sessionId, source, packageName, protocol, method, url, host, path,
                httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
                requestBodyTruncated, responseBodyTruncated,
                requestSize, responseSize, durationMs, time, mimeType
@@ -59,7 +59,12 @@ interface CaptureDao {
         ORDER BY time DESC, id DESC LIMIT :limit
         """
     )
-    suspend fun httpPage(sessionId: String, afterTime: Long, afterId: Long, limit: Int): List<HttpRecordSummaryEntity>
+    suspend fun httpPage(
+        sessionId: String,
+        afterTime: Long,
+        afterId: Long,
+        limit: Int,
+    ): List<HttpRecordSummaryEntity>
 
     @Query("SELECT * FROM http_record WHERE id = :id")
     suspend fun httpById(id: Long): HttpRecordEntity?
@@ -77,7 +82,7 @@ interface CaptureDao {
      */
     @Query(
         """
-        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+        SELECT id, sessionId, source, packageName, protocol, method, url, host, path,
                httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
                requestBodyTruncated, responseBodyTruncated,
                requestSize, responseSize, durationMs, time, mimeType
@@ -88,7 +93,7 @@ interface CaptureDao {
 
     @Query(
         """
-        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+        SELECT id, sessionId, source, packageName, protocol, method, url, host, path,
                httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
                requestBodyTruncated, responseBodyTruncated,
                requestSize, responseSize, durationMs, time, mimeType

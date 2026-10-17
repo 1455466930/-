@@ -74,6 +74,7 @@ private fun List<String>.decodeHeaders(): List<HttpHeader> = mapNotNull {
 fun HttpRecordEntity.toModel() = HttpRecord(
     id = id,
     sessionId = sessionId,
+    source = source,
     packageName = packageName,
     protocol = runCatching { Protocol.valueOf(protocol) }.getOrDefault(Protocol.HTTP),
     method = method,
@@ -107,6 +108,7 @@ fun HttpRecordEntity.toModel() = HttpRecord(
 fun HttpRecordSummaryEntity.toModel() = HttpRecord(
     id = id,
     sessionId = sessionId,
+    source = source,
     packageName = packageName,
     protocol = runCatching { Protocol.valueOf(protocol) }.getOrDefault(Protocol.HTTP),
     method = method,
@@ -132,6 +134,7 @@ fun HttpRecordSummaryEntity.toModel() = HttpRecord(
 fun HttpRecord.toEntity() = HttpRecordEntity(
     id = id,
     sessionId = sessionId,
+    source = source,
     packageName = packageName,
     protocol = protocol.name,
     method = method,
@@ -184,6 +187,7 @@ fun PacketData.toEntity() = PacketDataEntity(
 )
 
 fun CaptureSessionEntity.toModel() = CaptureSession(
+    source = source,
     sessionId = sessionId,
     packageName = packageName,
     appLabel = appLabel,
@@ -195,6 +199,7 @@ fun CaptureSessionEntity.toModel() = CaptureSession(
 )
 
 fun CaptureSession.toEntity() = CaptureSessionEntity(
+    source = source,
     sessionId = sessionId,
     packageName = packageName,
     appLabel = appLabel,

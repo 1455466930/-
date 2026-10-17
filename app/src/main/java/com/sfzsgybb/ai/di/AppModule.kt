@@ -92,7 +92,12 @@ object AppModule {
             // 注册迁移：不加的话 Room 在版本升级时会抛
             // "A migration from 1 to 2 was required but not found"，
             // 导致所有数据库操作失败（表现为大部分 MCP 工具报错）。
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(
+            AppDatabase.MIGRATION_1_2,
+            AppDatabase.MIGRATION_2_3,
+            AppDatabase.MIGRATION_3_4,
+            AppDatabase.MIGRATION_4_5,
+        )
             // 仅允许「降级」时破坏性重建；升级走上面的迁移，不会丢数据
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
@@ -176,7 +181,7 @@ object AppModule {
         GetLogTotalTool(logRepo),
 
         // ---------- VPN 抓包（路由层接管，覆盖不读系统代理的应用） ----------
-        VpnControlTool(vpnController),
+        VpnControlTool(vpnController, appList),
 
         // ---------- MITM 代理控制 ----------
         com.sfzsgybb.ai.mcp.tools.MitmControlTool(mitmController),

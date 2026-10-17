@@ -61,6 +61,8 @@ data class LogRecord(
  */
 data class CaptureSession(
     val sessionId: String = UUID.randomUUID().toString(),
+    /** 抓包模式：hook / vpn */
+    val source: String = "hook",
     val packageName: String = "",
     val appLabel: String = "",
     val state: CaptureState = CaptureState.IDLE,
@@ -75,6 +77,8 @@ data class CaptureSession(
 data class HttpRecord(
     val id: Long = 0,
     val sessionId: String = "",
+    /** 数据来源：hook / vpn */
+    val source: String = "hook",
     val packageName: String = "",
     val protocol: Protocol = Protocol.HTTP,
     val method: String = "",

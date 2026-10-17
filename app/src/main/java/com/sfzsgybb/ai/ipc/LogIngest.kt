@@ -87,6 +87,8 @@ internal object LogIngest {
             val recordId = captureRepository.insertHttp(
                 HttpRecord(
                     sessionId = sessionId,
+                    // 【来源标记】这条数据来自 Hook 抓包（Java 层拦截）
+                    source = "hook",
                     packageName = pkg,
                     protocol = Protocol.HTTP,
                     method = method,

@@ -21,7 +21,7 @@ interface AnalysisDao {
      */
     @Query(
         """
-        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+        SELECT id, sessionId, source, packageName, protocol, method, url, host, path,
                httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
                requestBodyTruncated, responseBodyTruncated,
                requestSize, responseSize, durationMs, time, mimeType
@@ -31,6 +31,7 @@ interface AnalysisDao {
           AND (:method = '' OR method = :method)
           AND (:statusCode = -1 OR statusCode = :statusCode)
           AND (:urlKeyword = '' OR url LIKE '%' || :urlKeyword || '%')
+          AND (:source = '' OR source = :source)
         ORDER BY time DESC
         LIMIT :limit OFFSET :offset
         """
@@ -43,6 +44,7 @@ interface AnalysisDao {
         urlKeyword: String,
         limit: Int,
         offset: Int,
+        source: String = "",
     ): List<HttpRecordSummaryEntity>
 
     @Query(
@@ -53,6 +55,7 @@ interface AnalysisDao {
           AND (:method = '' OR method = :method)
           AND (:statusCode = -1 OR statusCode = :statusCode)
           AND (:urlKeyword = '' OR url LIKE '%' || :urlKeyword || '%')
+          AND (:source = '' OR source = :source)
         """
     )
     suspend fun countFilterHttp(
@@ -61,12 +64,13 @@ interface AnalysisDao {
         method: String,
         statusCode: Int,
         urlKeyword: String,
+        source: String = "",
     ): Long
 
     /** 取最近 N 条（分析工具用）。 */
     @Query(
         """
-        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+        SELECT id, sessionId, source, packageName, protocol, method, url, host, path,
                httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
                requestBodyTruncated, responseBodyTruncated,
                requestSize, responseSize, durationMs, time, mimeType
@@ -86,24 +90,26 @@ interface AnalysisDao {
      */
     @Query(
         """
-        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+        SELECT id, sessionId, source, packageName, protocol, method, url, host, path,
                httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
                requestBodyTruncated, responseBodyTruncated,
                requestSize, responseSize, durationMs, time, mimeType
         FROM http_record
         WHERE (:query = '' OR url LIKE '%' || :query || '%' OR host LIKE '%' || :query || '%')
+          AND (:source = '' OR source = :source)
         ORDER BY id DESC LIMIT :limit
         """
     )
-    suspend fun recentTrafficAll(query: String, limit: Int): List<HttpRecordSummaryEntity>
+    suspend fun recentTrafficAll(query: String, limit: Int, source: String = ""): List<HttpRecordSummaryEntity>
 
     @Query(
         """
         SELECT COUNT(*) FROM http_record
         WHERE (:query = '' OR url LIKE '%' || :query || '%' OR host LIKE '%' || :query || '%')
+          AND (:source = '' OR source = :source)
         """
     )
-    suspend fun countTrafficAll(query: String): Long
+    suspend fun countTrafficAll(query: String, source: String = ""): Long
 
     @Query("SELECT * FROM http_record WHERE id = :id")
     suspend fun httpById(id: Long): HttpRecordEntity?
@@ -116,7 +122,7 @@ interface AnalysisDao {
      */
     @Query(
         """
-        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+        SELECT id, sessionId, source, packageName, protocol, method, url, host, path,
                httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
                requestBodyTruncated, responseBodyTruncated,
                requestSize, responseSize, durationMs, time, mimeType
@@ -147,7 +153,7 @@ interface AnalysisDao {
     /** 取指定包名的最近 HTTP 记录。 */
     @Query(
         """
-        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+        SELECT id, sessionId, source, packageName, protocol, method, url, host, path,
                httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
                requestBodyTruncated, responseBodyTruncated,
                requestSize, responseSize, durationMs, time, mimeType
@@ -161,14 +167,16 @@ interface AnalysisDao {
     /** 最近抓到的所有 HTTP 记录（跨包名，抓包页「全部」视图）。 */
     @Query(
         """
-        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+        SELECT id, sessionId, source, packageName, protocol, method, url, host, path,
                httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
                requestBodyTruncated, responseBodyTruncated,
                requestSize, responseSize, durationMs, time, mimeType
-        FROM http_record ORDER BY id DESC LIMIT :limit
+        FROM http_record
+        WHERE (:source = '' OR source = :source)
+        ORDER BY id DESC LIMIT :limit
         """
     )
-    suspend fun recentHttpAll(limit: Int): List<HttpRecordSummaryEntity>
+    suspend fun recentHttpAll(limit: Int, source: String = ""): List<HttpRecordSummaryEntity>
 
     @Query("SELECT * FROM http_record WHERE id IN (:ids)")
     suspend fun httpByIds(ids: List<Long>): List<HttpRecordEntity>
@@ -245,7 +253,7 @@ interface AnalysisDao {
 
     @Query(
         """
-        SELECT id, sessionId, packageName, protocol, method, url, host, path,
+        SELECT id, sessionId, source, packageName, protocol, method, url, host, path,
                httpVersion, statusCode, statusText, requestHeaders, responseHeaders,
                requestBodyTruncated, responseBodyTruncated,
                requestSize, responseSize, durationMs, time, mimeType

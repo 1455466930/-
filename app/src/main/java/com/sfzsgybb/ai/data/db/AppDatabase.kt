@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ConnectRecordEntity::class,
         StackRecordEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -55,6 +55,20 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE log_record ADD COLUMN keyData BLOB NOT NULL DEFAULT x''")
                 db.execSQL("ALTER TABLE log_record ADD COLUMN paramDesc TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE log_record ADD COLUMN resultKind TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * v4 → v5：区分 Hook 抓包与代理抓包的来源。
+         *
+         * 之前两条链路的数据混在一张表里，无法按模式过滤。
+         * 默认值给 'hook' —— 历史数据大多来自 Hook（VPN 是后来才加的功能）。
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE http_record ADD COLUMN source TEXT NOT NULL DEFAULT 'hook'")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_http_record_source ON http_record(source)")
+                db.execSQL("ALTER TABLE capture_session ADD COLUMN source TEXT NOT NULL DEFAULT 'hook'")
             }
         }
     }
