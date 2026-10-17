@@ -112,11 +112,22 @@ class CertificateInstaller(private val context: Context) {
         val m = CertificateManager
         if (!m.isInitialized) return Result(false, "CA 未初始化")
 
-        val der = m.caCertificateDer() ?: return Result(false, "读不到 CA 证书")
+        // 【关键 Bug 修复】系统信任区要 PEM 文本，不是 DER 二进制。
+        //
+        // 之前用 caCertificateDer() + String(der, ISO_8859_1) 写文件，
+        // 结果写进去的是「DER 二进制被当成单字节文本」的垃圾内容。
+        // Android 读系统 CA 时只认 PEM，解析失败 → 整条信任链断掉 →
+        // 所有应用 HTTPS 握手失败 → 表现为「一开 VPN 网页全打不开」。
+        //
+        // 现在统一用 PEM，并且走 base64 传输避免 shell 特殊字符问题。
+        val pem = m.caCertificatePem() ?: return Result(false, "读不到 CA 证书")
         val hash = subjectHash(m) ?: return Result(false, "算不出证书 hash")
 
+        // 用 base64 包一层传给 su，避免 PEM 里的换行/减号在 shell 里被转义
+        val pemB64 = android.util.Base64.encodeToString(pem, android.util.Base64.NO_WRAP)
+
         // 步骤 1：写到模块投放目录（重启后持久）
-        val toModule = writeTemp(der, hash)
+        val toModule = writeTemp(pem, hash)
 
         // 步骤 2：检查 root
         if (!hasRoot()) {
@@ -135,19 +146,24 @@ class CertificateInstaller(private val context: Context) {
         }
 
         // 步骤 3：root 可用，直接写系统信任区（立即生效）
-        val immediate = runSu(
+        runSu(
             "mkdir -p $SYSTEM_CERT_DIR && " +
-                "cat > $SYSTEM_CERT_DIR/$hash.0 << 'EOF'\n" +
-                String(der, Charsets.ISO_8859_1) + "\nEOF\n" +
+                "echo '$pemB64' | base64 -d > $SYSTEM_CERT_DIR/$hash.0 && " +
                 "chmod 644 $SYSTEM_CERT_DIR/$hash.0 && " +
-                "chown root:root $SYSTEM_CERT_DIR/$hash.0",
+                "chown root:root $SYSTEM_CERT_DIR/$hash.0 && " +
+                "chcon u:object_r:system_file:s0 $SYSTEM_CERT_DIR/$hash.0 2>/dev/null; true",
         )
+
+        // 自检：确认写进去的确实是 PEM（不是 DER 二进制）
+        val pemOk = runSu(
+            "head -1 $SYSTEM_CERT_DIR/$hash.0 | grep -q 'BEGIN CERTIFICATE'",
+        )
+        val immediate = pemOk
 
         // 步骤 4：顺便装到用户级（有 networkSecurityConfig 的应用也能认）
         runSu(
             "mkdir -p $USER_CERT_DIR && " +
-                "cat > $USER_CERT_DIR/$hash.0 << 'EOF'\n" +
-                String(der, Charsets.ISO_8859_1) + "\nEOF\n" +
+                "echo '$pemB64' | base64 -d > $USER_CERT_DIR/$hash.0 && " +
                 "chmod 644 $USER_CERT_DIR/$hash.0",
         )
 
@@ -186,11 +202,15 @@ class CertificateInstaller(private val context: Context) {
         String.format("%08x", v)
     }.getOrNull()
 
-    /** 写一份到模块投放目录。 */
-    private fun writeTemp(der: ByteArray, hash: String): Boolean = runCatching {
+    /**
+     * 写一份到模块投放目录。
+     *
+     * 传的是 PEM 文本 —— MoveCertificate 模块会自己转成系统需要的格式。
+     */
+    private fun writeTemp(pem: ByteArray, hash: String): Boolean = runCatching {
         val dir = File(MODULE_CERT_DIR)
         if (!dir.exists()) dir.mkdirs()
-        File(dir, "$hash.0").writeBytes(der)
+        File(dir, "$hash.0").writeBytes(pem)
         true
     }.getOrElse {
         Log.w(TAG, "写入模块目录失败: ${it.message}")
